@@ -51,7 +51,6 @@ const upload = multer({
 router.post('/connect', [
   auth,
   body('accountName').trim().isLength({ min: 1 }).withMessage('Account name is required'),
-  // Make phone optional since we'll get it from user profile
   body('phoneNumber').optional().matches(/^\+?[\d\s\-\(\)]+$/).withMessage('Please enter a valid phone number')
 ], async (req, res) => {
   try {
@@ -64,9 +63,14 @@ router.post('/connect', [
       });
     }
 
-    const { accountName } = req.body;
+    const { accountName, phoneNumber } = req.body;
     const userId = req.user.id;
-    const phoneNumber = "+918920593970"
+
+    console.log('Connect request:', { 
+      accountName, 
+      phoneNumber: phoneNumber || 'not provided', 
+      userId 
+    });
 
     // Get user details
     const user = await User.findById(userId);
@@ -78,64 +82,74 @@ router.post('/connect', [
       });
     }
 
-    // Use phone number from request body or user profile
+    // Try to get phone number from request body or user profile (completely optional)
     let finalPhoneNumber = phoneNumber || user.phone;
     
-    if (!finalPhoneNumber) {
-      return res.status(400).json({
-        success: false,
-        message: 'Phone number is required. Please provide a phone number or update your profile.'
+    // Clean and validate phone number only if provided
+    if (finalPhoneNumber) {
+      finalPhoneNumber = finalPhoneNumber.replace(/\D/g, ''); // Remove non-digits
+      
+      if (finalPhoneNumber.length < 10) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please enter a valid phone number with at least 10 digits'
+        });
+      }
+
+      // Add country code if not present
+      if (!finalPhoneNumber.startsWith('91') && finalPhoneNumber.length === 10) {
+        finalPhoneNumber = '91' + finalPhoneNumber;
+      }
+
+      // Check if account with this phone number already exists for this user
+      const existingAccount = await WhatsAppAccount.findOne({
+        user: userId,
+        phoneNumber: finalPhoneNumber
       });
+
+      if (existingAccount) {
+        return res.status(400).json({
+          success: false,
+          message: 'WhatsApp account with this phone number already exists',
+          data: {
+            accountId: existingAccount._id,
+            status: existingAccount.status
+          }
+        });
+      }
     }
 
-    // Clean and validate phone number
-    finalPhoneNumber = finalPhoneNumber.replace(/\D/g, ''); // Remove non-digits
-    if (finalPhoneNumber.length < 10) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please enter a valid phone number with at least 10 digits'
-      });
-    }
-
-    // Add country code if not present
-    if (!finalPhoneNumber.startsWith('91') && finalPhoneNumber.length === 10) {
-      finalPhoneNumber = '91' + finalPhoneNumber;
-    }
-
-    // Check if account with this phone number already exists for this user
-    const existingAccount = await WhatsAppAccount.findOne({
-      user: userId,
-      phoneNumber: finalPhoneNumber
-    });
-
-    if (existingAccount) {
-      return res.status(400).json({
-        success: false,
-        message: 'WhatsApp account with this phone number already exists',
-        data: {
-          accountId: existingAccount._id,
-          status: existingAccount.status
-        }
-      });
-    }
-
-    // Create new WhatsApp account
+    // Create new WhatsApp account (phone number can be null initially)
     const account = new WhatsAppAccount({
       user: userId,
       accountName,
-      phoneNumber: finalPhoneNumber,
+      phoneNumber: finalPhoneNumber || null, // Phone number is completely optional
       status: 'connecting'
     });
 
     await account.save();
+    console.log('Account created:', account._id);
 
     // Initialize WhatsApp client with error handling
     try {
-      await WhatsAppWebService.initializeClient(account._id.toString(), userId);
+      // CRITICAL FIX: Get io instance from app or global
+      const io = req.app.get('io') || global.io;
+      
+      if (!io) {
+        console.error('Socket.IO instance not found!');
+        throw new Error('Socket.IO not available');
+      }
+
+      console.log('Initializing WhatsApp client with IO instance...');
+      
+      // Pass io instance to the service
+      await WhatsAppWebService.initializeClient(account._id.toString(), userId, io);
       
       res.status(201).json({
         success: true,
-        message: 'WhatsApp account connection initiated',
+        message: finalPhoneNumber ? 
+          'WhatsApp account connection initiated. Please scan the QR code.' :
+          'WhatsApp account connection initiated. Phone number will be detected after QR scan.',
         data: {
           accountId: account._id,
           accountName: account.accountName,
@@ -176,6 +190,7 @@ router.post('/connect', [
     });
   }
 });
+
 
 // @route   GET /api/whatsapp-web/accounts
 // @desc    Get all WhatsApp accounts for user
@@ -719,7 +734,7 @@ router.post('/send', [
     }
 
     // Validate content type
-    const validContentTypes = ['text', 'image', 'video', 'document', 'audio'];
+    const validContentTypes = ['text', 'image', 'video'];
     if (!validContentTypes.includes(messageContent.type)) {
       return res.status(400).json({
         success: false,
@@ -744,7 +759,7 @@ router.post('/send', [
     // Add media file path if uploaded
     if (req.file) {
       messageContent.mediaPath = req.file.path;
-      messageContent.fileName = req.file.originalname;
+      messageContent.fileName = req.file.filename;
       messageContent.mimeType = req.file.mimetype;
     }
 

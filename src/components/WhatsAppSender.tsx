@@ -70,31 +70,66 @@ const WhatsAppSender: React.FC = () => {
 
   const queryClient = useQueryClient();
 
-  // Initialize Socket.IO connection
+  const isFormValid = () => {
+    // Check if contacts are selected
+    if (selectedContacts.length === 0) return false;
+    
+    // For text messages, content is required
+    if (messageType === 'text') {
+      return messageContent.trim().length > 0;
+    }
+    
+    // For media messages, only file is required, caption is optional
+    if (messageType !== 'text') {
+      return mediaFile !== null;
+    }
+    
+    return false;
+  };
+
+  // Update your useEffect for Socket.IO connection
   useEffect(() => {
+    if (!user?.id) return;
+
     const newSocket = io('http://localhost:5000');
     setSocket(newSocket);
 
-    newSocket.emit('join_user_room', user?.id);
+    // Join user room immediately
+    newSocket.emit('join_user_room', user.id);
+    console.log('Joined user room:', user.id);
 
     // Listen for WhatsApp events
     newSocket.on('qr_code', (data) => {
-      setQrCodeData(data.qrCode);
-      setShowQRCode(true);
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'connecting' }));
+      console.log('QR Code received:', data);
+      
+      // Only show QR code if account is actually connecting (not already authenticated)
+      const currentStatus = connectionStatus[data.accountId];
+      if (currentStatus !== 'ready' && currentStatus !== 'authenticated') {
+        setQrCodeData(data.qrCode);
+        setShowQRCode(true);
+        setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'connecting' }));
+      } else {
+        console.log('Ignoring QR code - account already authenticated:', data.accountId);
+      }
     });
 
     newSocket.on('whatsapp_authenticated', (data) => {
+      console.log('WhatsApp authenticated:', data);
       setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'authenticated' }));
+      // Hide QR code when authenticated
+      setShowQRCode(false);
     });
 
     newSocket.on('whatsapp_ready', (data) => {
+      console.log('WhatsApp ready:', data);
       setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'ready' }));
       setShowQRCode(false);
+      setQrCodeData(''); // Clear QR code data
       queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
     });
 
     newSocket.on('whatsapp_disconnected', (data) => {
+      console.log('WhatsApp disconnected:', data);
       setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'disconnected' }));
       queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
     });
@@ -110,11 +145,43 @@ const WhatsAppSender: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp-campaigns'] });
       queryClient.invalidateQueries({ queryKey: ['whatsapp-messages'] });
       // Show success notification
-      alert(`Campaign completed! Sent: ${data.stats.sent}, Failed: ${data.stats.failed}`);
     });
 
-    return () => newSocket.close();
+    // Add connection event listeners for debugging
+    newSocket.on('connect', () => {
+      console.log('Socket connected:', newSocket.id);
+    });
+
+    newSocket.on('disconnect', () => {
+      console.log('Socket disconnected');
+    });
+
+    return () => {
+      console.log('Cleaning up socket connection');
+      newSocket.close();
+    };
   }, [user?.id, queryClient]);
+
+  // Update your handleConnectAccount function
+  const handleConnectAccount = () => {
+    const accountName = `WhatsApp Account ${(accounts?.data?.length || 0) + 1}`;
+    console.log('Connecting account:', accountName);
+    
+    // Reset QR code state before connecting
+    setQrCodeData('');
+    setShowQRCode(false);
+    
+    connectAccountMutation.mutate({ accountName });
+  };
+
+  // Add a function to close QR modal
+  const closeQRModal = () => {
+    setShowQRCode(false);
+    setQrCodeData('');
+  };
+
+  // Add this to check if we should show QR modal
+  const shouldShowQRModal = showQRCode && qrCodeData && !Object.values(connectionStatus).includes('ready'); 
 
   // Fetch WhatsApp accounts
   const { data: accounts, isLoading: accountsLoading } = useQuery({
@@ -231,20 +298,21 @@ const WhatsAppSender: React.FC = () => {
     }
   });
 
-  const handleConnectAccount = () => {
-    const accountName = `WhatsApp Account ${(accounts?.data?.length || 0) + 1}`;
-    connectAccountMutation.mutate({ accountName });
-  };
-
   const handleSendMessage = () => {
-    if (!selectedAccount || !messageContent || selectedContacts.length === 0) return;
+    if (!selectedAccount || selectedContacts.length === 0) return;
+    
+    // For text messages, content is required
+    if (messageType === 'text' && !messageContent.trim()) return;
+    
+    // For media messages, file is required, but caption is optional
+    if (messageType !== 'text' && !mediaFile) return;
 
     sendMessageMutation.mutate({
       accountId: selectedAccount._id,
       recipients: selectedContacts,
       content: {
         type: messageType,
-        text: messageContent
+        text: messageContent.trim() || '' // Ensure we always send a string, even if empty
       }
     });
   };
@@ -524,9 +592,7 @@ const WhatsAppSender: React.FC = () => {
                 {[
                   { type: 'text', icon: MessageSquare, label: 'Text' },
                   { type: 'image', icon: Image, label: 'Image' },
-                  { type: 'video', icon: Video, label: 'Video' },
-                  { type: 'document', icon: FileText, label: 'Document' },
-                  { type: 'audio', icon: Mic, label: 'Audio' }
+                  { type: 'video', icon: Video, label: 'Video' }
                 ].map(({ type, icon: Icon, label }) => (
                   <button
                     key={type}
@@ -576,22 +642,20 @@ const WhatsAppSender: React.FC = () => {
                   onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
                   accept={
                     messageType === 'image' ? 'image/*' :
-                    messageType === 'video' ? 'video/*' :
-                    messageType === 'audio' ? 'audio/*' :
-                    messageType === 'document' ? '.pdf,.doc,.docx,.txt' : '*'
+                    messageType === 'video' ? 'video/*' : '*'
                   }
                   className="hidden"
                   id="media-upload"
                 />
-                <label htmlFor="media-upload" className="cursor-pointer">
+                <div className="cursor-pointer" onClick={() => document.getElementById('media-upload')?.click()}>
                   <Upload className="mx-auto text-gray-400 mb-3" size={32} />
                   <p className="text-gray-600 dark:text-gray-400 mb-2">
                     {mediaFile ? mediaFile.name : `Upload ${messageType} file`}
                   </p>
-                  <button type="button" className="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-colors">
+                  <div className="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-colors inline-block">
                     Choose File
-                  </button>
-                </label>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -599,21 +663,26 @@ const WhatsAppSender: React.FC = () => {
           {/* Message Content */}
           <div className="mt-6">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              {messageType === 'text' ? 'Message Content' : 'Caption (Optional)'}
+              {messageType === 'text' ? 'Message Content *' : 'Caption (Optional)'}
             </label>
             <textarea
               value={messageContent}
               onChange={(e) => setMessageContent(e.target.value)}
               rows={4}
               className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="Type your message here..."
+              placeholder={
+                messageType === 'text' 
+                  ? "Type your message here..." 
+                  : "Add a caption to your media (optional)..."
+              }
               required={messageType === 'text'}
             />
-            {messageType === 'text' && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Message length: {messageContent.length} characters
-              </p>
-            )}
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              {messageType === 'text' 
+                ? `Message length: ${messageContent.length} characters` 
+                : `Caption length: ${messageContent.length} characters`
+              }
+            </p>
           </div>
 
           {/* Anti-Blocking Settings */}
@@ -653,12 +722,7 @@ const WhatsAppSender: React.FC = () => {
             </div>
             <button
               onClick={handleSendMessage}
-              disabled={
-                (messageType === 'text' && !messageContent.trim()) || 
-                (messageType !== 'text' && !mediaFile) ||
-                selectedContacts.length === 0 || 
-                sendMessageMutation.isPending
-              }
+              disabled={!isFormValid() || sendMessageMutation.isPending}
               className="flex items-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {sendMessageMutation.isPending ? (
