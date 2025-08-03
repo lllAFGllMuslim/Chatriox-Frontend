@@ -19,7 +19,7 @@ class WhatsAppWebService {
   }
 
   // Initialize WhatsApp client for a user account
-async initializeClient(accountId, userId) {
+async initializeClient(accountId, userId, io = null) {
   try {
     // CRITICAL: Ensure accountId is always a string
     const accountIdString = accountId.toString();
@@ -53,7 +53,7 @@ async initializeClient(accountId, userId) {
 
     const client = new Client({
       authStrategy: new LocalAuth({
-        clientId: accountIdString, // Use string version
+        clientId: accountIdString,
         dataPath: this.sessionPath
       }),
       puppeteer: {
@@ -77,22 +77,87 @@ async initializeClient(accountId, userId) {
     this.clients.set(accountIdString, client);
     console.log(`Client stored in map for account: ${accountIdString}`);
 
-    // Rest of the method remains same, just replace accountId with accountIdString
-    // in all event handlers...
-
+    // FIXED QR Code event handler
     client.on('qr', async (qr) => {
       console.log('QR Code generated for account:', accountIdString);
+      console.log('QR Code data length:', qr.length);
+      console.log('QR Code preview:', qr.substring(0, 50) + '...');
+      
+      // Store QR code locally
       this.qrCodes.set(accountIdString, qr);
       
-      account.qrCode = qr;
-      account.status = 'connecting';
-      await account.save();
+      // Update account in database
+      try {
+        account.qrCode = qr;
+        account.status = 'connecting';
+        await account.save();
+        console.log('Account updated with QR code in database');
+      } catch (dbError) {
+        console.error('Error saving QR to database:', dbError);
+      }
       
+      // CRITICAL FIX: Multiple emission methods
+      console.log('Emitting QR code via multiple channels...');
+      
+      // Method 1: Use passed io parameter
+      if (io) {
+        console.log('Emitting via passed io parameter to room:', `user_${userId}`);
+        io.to(`user_${userId}`).emit('qr_code', { 
+          accountId: accountIdString, 
+          qrCode: qr,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Also broadcast to all sockets (backup)
+        io.emit('qr_code_broadcast', { 
+          accountId: accountIdString, 
+          qrCode: qr,
+          userId: userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // Method 2: Use global.io if available
       if (global.io) {
+        console.log('Emitting via global.io to room:', `user_${userId}`);
         global.io.to(`user_${userId}`).emit('qr_code', { 
           accountId: accountIdString, 
           qrCode: qr,
-          timestamp: new Date()
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // Method 3: Store globally for polling fallback
+      global.latestQRCode = {
+        accountId: accountIdString,
+        qrCode: qr,
+        userId: userId,
+        timestamp: new Date()
+      };
+      
+      console.log('QR code emission completed via all available channels');
+    });
+
+    // Rest of your existing event handlers...
+    client.on('authenticated', async () => {
+      console.log('WhatsApp authenticated for account:', accountIdString);
+      
+      try {
+        account.status = 'authenticated';
+        await account.save();
+      } catch (dbError) {
+        console.error('Error updating account status to authenticated:', dbError);
+      }
+      
+      // Emit authentication event
+      if (io) {
+        io.to(`user_${userId}`).emit('whatsapp_authenticated', {
+          accountId: accountIdString
+        });
+      }
+      if (global.io) {
+        global.io.to(`user_${userId}`).emit('whatsapp_authenticated', {
+          accountId: accountIdString
         });
       }
     });
@@ -106,28 +171,64 @@ async initializeClient(accountId, userId) {
         this.clients.set(accountIdString, client);
       }
       
-      account.status = 'ready';
-      account.lastActivity = new Date();
-      
-      const info = client.info;
-      if (info && info.wid) {
-        account.phoneNumber = info.wid.user;
+      try {
+        account.status = 'ready';
+        account.lastActivity = new Date();
+        
+        const info = client.info;
+        if (info && info.wid) {
+          account.phoneNumber = info.wid.user;
+        }
+        
+        await account.save();
+      } catch (dbError) {
+        console.error('Error updating account status to ready:', dbError);
       }
-      
-      await account.save();
       
       console.log(`Client ready and verified in map for account: ${accountIdString}, Phone: ${account.phoneNumber}`);
       
+      // Emit ready event
+      if (io) {
+        io.to(`user_${userId}`).emit('whatsapp_ready', { 
+          accountId: accountIdString, 
+          phoneNumber: account.phoneNumber,
+          profileName: client.info?.pushname || 'Unknown'
+        });
+      }
       if (global.io) {
         global.io.to(`user_${userId}`).emit('whatsapp_ready', { 
           accountId: accountIdString, 
           phoneNumber: account.phoneNumber,
-          profileName: info?.pushname || 'Unknown'
+          profileName: client.info?.pushname || 'Unknown'
         });
       }
     });
 
-    // Update other event handlers similarly...
+    client.on('disconnected', async (reason) => {
+      console.log(`WhatsApp disconnected for account: ${accountIdString}. Reason:`, reason);
+      
+      try {
+        account.status = 'disconnected';
+        account.isConnected = false;
+        await account.save();
+      } catch (dbError) {
+        console.error('Error updating account status to disconnected:', dbError);
+      }
+
+      // Emit disconnection event
+      if (io) {
+        io.to(`user_${userId}`).emit('whatsapp_disconnected', {
+          accountId: accountIdString,
+          reason: reason
+        });
+      }
+      if (global.io) {
+        global.io.to(`user_${userId}`).emit('whatsapp_disconnected', {
+          accountId: accountIdString,
+          reason: reason
+        });
+      }
+    });
 
     console.log(`Starting client initialization for account: ${accountIdString}`);
     await client.initialize();
@@ -149,7 +250,8 @@ async initializeClient(accountId, userId) {
   }
 }
 
-  // Send message with anti-blocking features
+
+// Send message with anti-blocking features
 // Enhanced sendMessage method with better client validation
 async sendMessage(accountId, recipient, content, options = {}) {
   try {
@@ -260,75 +362,90 @@ async sendMessage(accountId, recipient, content, options = {}) {
         break;
         
       case 'image':
-        if (content.mediaPath && fs.existsSync(content.mediaPath)) {
-          const imageMedia = MessageMedia.fromFilePath(content.mediaPath);
+        let imagePath = content.mediaPath;
+        
+        // If no mediaPath but we have fileName, construct the path
+        if (!imagePath && content.fileName) {
+          imagePath = path.join(__dirname, '../uploads/whatsapp/', content.fileName);
+        }
+        
+        if (imagePath && fs.existsSync(imagePath)) {
+          const imageMedia = MessageMedia.fromFilePath(imagePath);
           const numberId = await client.getNumberId(chatId);
           if (!numberId) {
             throw new Error(`Phone number ${phoneNumber} is not registered on WhatsApp`);
           }
-          message = await client.sendMessage(chatId, imageMedia, { caption: content.caption || '' });
+          message = await client.sendMessage(chatId, imageMedia, { caption: content.text || content.caption || '' });
         } else if (content.mediaUrl) {
           const imageMedia = await MessageMedia.fromUrl(content.mediaUrl);
           const numberId = await client.getNumberId(chatId);
           if (!numberId) {
             throw new Error(`Phone number ${phoneNumber} is not registered on WhatsApp`);
           }
-          message = await client.sendMessage(chatId, imageMedia, { caption: content.caption || '' });
+          message = await client.sendMessage(chatId, imageMedia, { caption: content.text || content.caption || '' });
         } else {
+          console.log('Debug - No valid image source:', { 
+            mediaPath: content.mediaPath, 
+            fileName: content.fileName, 
+            mediaUrl: content.mediaUrl 
+          });
           throw new Error('No valid image source provided');
         }
         break;
-        
+          
       case 'video':
-        if (content.mediaPath && fs.existsSync(content.mediaPath)) {
-          const videoMedia = MessageMedia.fromFilePath(content.mediaPath);
-          const numberId = await client.getNumberId(chatId);
-          if (!numberId) {
-            throw new Error(`Phone number ${phoneNumber} is not registered on WhatsApp`);
+        let videoPath = content.mediaPath;
+        
+        // If no mediaPath but we have fileName, construct the path
+        if (!videoPath && content.fileName) {
+          videoPath = path.join(__dirname, '../uploads/whatsapp/', content.fileName);
+        }
+        
+        if (videoPath && fs.existsSync(videoPath)) {
+          try {
+            // Check if number exists on WhatsApp
+            const numberId = await client.getNumberId(chatId);
+            if (!numberId) {
+              throw new Error(`Phone number ${phoneNumber} is not registered on WhatsApp`);
+            }
+
+            // Create video media object
+            const videoMedia = MessageMedia.fromFilePath(videoPath);
+            
+            // Send as document (this works reliably)
+            message = await client.sendMessage(chatId, videoMedia, { 
+              caption: content.text || content.caption || '',
+              sendMediaAsDocument: true
+            });
+            
+            console.log('✅ Video sent successfully as document!');
+            
+          } catch (videoError) {
+            console.error('Error sending video:', videoError);
+            throw new Error(`Failed to send video: ${videoError.message}`);
           }
-          message = await client.sendMessage(chatId, videoMedia, { caption: content.caption || '' });
+          
         } else if (content.mediaUrl) {
-          const videoMedia = await MessageMedia.fromUrl(content.mediaUrl);
-          const numberId = await client.getNumberId(chatId);
-          if (!numberId) {
-            throw new Error(`Phone number ${phoneNumber} is not registered on WhatsApp`);
+          try {
+            const videoMedia = await MessageMedia.fromUrl(content.mediaUrl);
+            const numberId = await client.getNumberId(chatId);
+            if (!numberId) {
+              throw new Error(`Phone number ${phoneNumber} is not registered on WhatsApp`);
+            }
+            
+            message = await client.sendMessage(chatId, videoMedia, { 
+              caption: content.text || content.caption || '',
+              sendMediaAsDocument: true
+            });
+            
+          } catch (urlError) {
+            throw new Error(`Failed to fetch video from URL: ${urlError.message}`);
           }
-          message = await client.sendMessage(chatId, videoMedia, { caption: content.caption || '' });
         } else {
           throw new Error('No valid video source provided');
         }
-        break;
-        
-      case 'document':
-        if (content.mediaPath && fs.existsSync(content.mediaPath)) {
-          const docMedia = MessageMedia.fromFilePath(content.mediaPath);
-          const numberId = await client.getNumberId(chatId);
-          if (!numberId) {
-            throw new Error(`Phone number ${phoneNumber} is not registered on WhatsApp`);
-          }
-          message = await client.sendMessage(chatId, docMedia, { 
-            sendMediaAsDocument: true,
-            caption: content.caption || content.fileName
-          });
-        } else {
-          throw new Error('No valid document source provided');
-        }
-        break;
-        
-      case 'audio':
-        if (content.mediaPath && fs.existsSync(content.mediaPath)) {
-          const audioMedia = MessageMedia.fromFilePath(content.mediaPath);
-          const numberId = await client.getNumberId(chatId);
-          if (!numberId) {
-            throw new Error(`Phone number ${phoneNumber} is not registered on WhatsApp`);
-          }
-          message = await client.sendMessage(chatId, audioMedia, { sendAudioAsVoice: true });
-        } else {
-          throw new Error('No valid audio source provided');
-        }
-        break;
-        
-      default:
+        break;  
+        default:
         throw new Error('Unsupported message type');
     }
 
@@ -433,6 +550,7 @@ async connectWhatsApp(accountId, userId) {
   }
 }
 
+
 // Add a method to check client health
 async checkClientHealth(accountId) {
   try {
@@ -509,10 +627,7 @@ async processCampaign(campaignId) {
     const accountId = campaign.whatsappAccount._id.toString();
     console.log(`Looking for client with accountId: ${accountId}`);
     console.log(`Available clients: ${Array.from(this.clients.keys())}`);
-    if (!this.clients.has(accountId)) {
-  console.warn(`Client not found for accountId ${accountId}, attempting to initialize...`);
-  await this.initializeClient(accountId, campaign.user._id); // Make sure this function works as expected
-}
+
     const client = this.clients.get(accountId);
 
     // Enhanced client validation
@@ -713,8 +828,7 @@ async processCampaign(campaignId) {
   }
 }
 
-
-// Handle message acknowledgments
+  // Handle message acknowledgments
   async handleMessageAck(msg, ack, accountId) {
     try {
       const message = await WhatsAppMessage.findOne({

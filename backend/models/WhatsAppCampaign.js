@@ -7,7 +7,7 @@ const messageSchema = new mongoose.Schema({
     customData: { type: Map, of: String }
   },
   content: {
-    type: { type: String, enum: ['text', 'image', 'video', 'document', 'audio'], required: true },
+    type: { type: String, enum: ['text', 'image', 'video'], required: true },
     text: String,
     mediaUrl: String,
     fileName: String,
@@ -20,7 +20,7 @@ const messageSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'blocked'],
+    enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'partial', 'blocked'],
     default: 'pending'
   },
   sentAt: Date,
@@ -90,7 +90,7 @@ const whatsappCampaignSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['draft', 'scheduled', 'running', 'paused', 'completed', 'failed', 'cancelled'],
+    enum: ['draft', 'scheduled', 'running', 'paused', 'completed', 'failed', 'partial', 'cancelled'],
     default: 'draft'
   },
   progress: {

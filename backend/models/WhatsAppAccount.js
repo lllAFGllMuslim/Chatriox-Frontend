@@ -13,7 +13,7 @@ const whatsappAccountSchema = new mongoose.Schema({
   },
   phoneNumber: {
     type: String,
-    required: true
+    required: false
   },
   status: {
     type: String,
