@@ -41,7 +41,7 @@ const AdminDashboard: React.FC = () => {
   const { data: dashboardData, isLoading } = useQuery({
     queryKey: ['admin-dashboard', timeRange],
     queryFn: async () => {
-      const response = await fetch(`http://localhost:5000/api/admin/dashboard?timeRange=${timeRange}`, {
+      const response = await fetch(`https://papakha.in/api/admin/dashboard?timeRange=${timeRange}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();

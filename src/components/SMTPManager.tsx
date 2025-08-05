@@ -40,7 +40,7 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
   const { data: smtpConfigs, isLoading } = useQuery({
     queryKey: ['smtp-configs'],
     queryFn: async () => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/smtp/configs`, {
+     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/configs`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -51,7 +51,7 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
   // Create SMTP config mutation
   const createConfigMutation = useMutation({
     mutationFn: async (data: any) => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/smtp/configs`, {
+     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/configs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -71,7 +71,7 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
   // Update SMTP config mutation
   const updateConfigMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/smtp/configs/${id}`, {
+     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/configs/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -92,7 +92,7 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
   // Delete SMTP config mutation
   const deleteConfigMutation = useMutation({
     mutationFn: async (id: string) => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/smtp/configs/${id}`, {
+     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/configs/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
@@ -106,7 +106,7 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
   // Test SMTP config mutation
   const testConfigMutation = useMutation({
     mutationFn: async (id: string) => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/smtp/test/${id}`, {
+     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/test/${id}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });

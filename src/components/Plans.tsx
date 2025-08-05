@@ -1,37 +1,237 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Star, Zap, Shield, Users, Headphones } from 'lucide-react';
+import { Check, Star, Zap, Shield, Users, Headphones, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+
+interface Plan {
+  id: string;
+  name: string;
+  price: {
+    monthly: number;
+    yearly: number;
+  };
+  features: {
+    emailsPerMonth: number;
+    emailAccounts: number;
+    whatsappAccounts: number;
+    templates: string;
+    validation: boolean | string;
+    analytics: string;
+    support: string;
+    whatsapp: boolean;
+    scraper: boolean | string;
+    customBranding: boolean;
+    apiAccess: boolean;
+  };
+  trialLimits: {
+    emailsPerMonth: number;
+    emailAccounts: number;
+    whatsappAccounts: number;
+    templates: string;
+    validation: number | string;
+    analytics: string;
+  };
+  isCurrentPlan?: boolean;
+  trialDaysRemaining?: number;
+}
+
+interface PlansResponse {
+  success: boolean;
+  data: {
+    plans: Plan[];
+    currentUser: {
+      plan: string;
+      planStatus: string;
+      isInTrial: boolean;
+      trialDaysRemaining: number;
+      planExpiry: string;
+    };
+  };
+}
+
+interface TrialStatusResponse {
+  success: boolean;
+  data: {
+    isInTrial: boolean;
+    isTrialExpired: boolean;
+    trialDaysRemaining: number;
+    trialStartDate: string;
+    trialEndDate: string;
+    planStatus: string;
+    currentPlan: string;
+  };
+}
 
 const Plans: React.FC = () => {
   const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [isProcessing, setIsProcessing] = useState<string | null>(null);
   const { user } = useAuth();
 
-  const { data: plans, isLoading } = useQuery({
+  // Fetch plans from the correct backend API
+  const { data: plansResponse, isLoading, error } = useQuery<PlansResponse>({
     queryKey: ['plans'],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/payments/plans`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/plans`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
-      const result = await response.json();
-      return result.data.plans;
-    }
+      if (!response.ok) {
+        throw new Error('Failed to fetch plans');
+      }
+      return response.json();
+    },
+    enabled: !!user
   });
 
-  const isInTrial = user?.planStatus === 'trial';
+  // Fetch trial status
+  const { data: trialStatusResponse } = useQuery<TrialStatusResponse>({
+    queryKey: ['trial-status'],
+    queryFn: async () => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/trial-status`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch trial status');
+      }
+      return response.json();
+    },
+    enabled: !!user
+  });
 
-  const formatPrice = (price: number) => {
-    if (billingCycle === 'yearly') {
-      return Math.round(price * 12 * 0.8); // 20% discount for yearly
+  // Transform backend plans data to match frontend expectations
+  const transformedPlans = plansResponse?.data?.plans?.map((plan) => {
+    let popular = false;
+    let description = '';
+    
+    // Set popularity and descriptions based on plan type
+    switch (plan.id) {
+      case 'starter':
+        description = 'Perfect for trying out our platform';
+        break;
+      case 'professional':
+        description = 'Great for individuals and small teams';
+        popular = true;
+        break;
+      case 'enterprise':
+        description = 'For large organizations with advanced needs';
+        break;
     }
-    return price;
+
+    // Convert features to display format
+    const displayFeatures = [
+      plan.features.emailsPerMonth === -1 ? 'Unlimited emails per month' : `${plan.features.emailsPerMonth.toLocaleString()} emails per month`,
+      plan.features.emailAccounts === -1 ? 'Unlimited email accounts' : `${plan.features.emailAccounts} email account${plan.features.emailAccounts > 1 ? 's' : ''}`,
+      `${plan.features.whatsappAccounts} WhatsApp account${plan.features.whatsappAccounts > 1 ? 's' : ''}`,
+      `${plan.features.templates} templates`,
+      `${plan.features.analytics} analytics`,
+      `${plan.features.support} support`,
+      ...(plan.features.whatsapp ? ['WhatsApp integration'] : []),
+      ...(plan.features.scraper ? [`${typeof plan.features.scraper === 'string' ? plan.features.scraper : 'Basic'} scraper`] : []),
+      ...(plan.features.customBranding ? ['Custom branding'] : []),
+      ...(plan.features.apiAccess ? ['API access'] : []),
+      ...(plan.features.validation ? ['Email validation'] : [])
+    ];
+
+    return {
+      ...plan,
+      popular,
+      description,
+      displayFeatures
+    };
+  }) || [];
+
+  const formatPrice = (price: { monthly: number; yearly: number }) => {
+    return billingCycle === 'yearly' ? price.yearly : price.monthly;
   };
 
-  const handleSelectPlan = (planId: string) => {
-    navigate(`/checkout?plan=${planId}&billing=${billingCycle}`);
+  const handleSelectPlan = async (planId: string) => {
+    if (isProcessing) return;
+    
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    // If it's the current active plan, do nothing
+    if (plansResponse?.data?.currentUser?.plan === planId && plansResponse?.data?.currentUser?.planStatus === 'active') {
+      return;
+    }
+
+    setIsProcessing(planId);
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/create-order`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          planId: planId,
+          billingCycle: billingCycle
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to create order');
+      }
+
+      if (result.success && result.data?.paymentSessionId) {
+        // Initialize Cashfree payment
+        const cashfree = new (window as any).Cashfree({
+          mode: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox'
+        });
+
+        const checkoutOptions = {
+          paymentSessionId: result.data.paymentSessionId,
+          redirectTarget: '_self'
+        };
+
+        cashfree.checkout(checkoutOptions).then((result: any) => {
+          if (result.error) {
+            console.error('Payment error:', result.error);
+            alert('Payment failed. Please try again.');
+          }
+          if (result.redirect) {
+            console.log('Payment completed');
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error creating order:', error);
+      alert(error instanceof Error ? error.message : 'Failed to process plan selection');
+    } finally {
+      setIsProcessing(null);
+    }
   };
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+            Failed to Load Plans
+          </h2>
+          <p className="text-gray-600 dark:text-gray-300">
+            Please try refreshing the page
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 py-12">
@@ -43,6 +243,40 @@ const Plans: React.FC = () => {
           <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
             Unlock the full potential of AI-powered content creation
           </p>
+          
+          {/* Current Subscription Status */}
+          {plansResponse?.data?.currentUser && (
+            <div className="bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-8 max-w-md mx-auto">
+              <p className="text-blue-800 dark:text-blue-200">
+                Current Plan: <span className="font-semibold capitalize">{plansResponse.data.currentUser.plan}</span>
+                {plansResponse.data.currentUser.planStatus === 'active' && plansResponse.data.currentUser.planExpiry && (
+                  <span className="block text-sm mt-1">
+                    Expires: {new Date(plansResponse.data.currentUser.planExpiry).toLocaleDateString()}
+                  </span>
+                )}
+                {plansResponse.data.currentUser.isInTrial && (
+                  <span className="block text-sm mt-1 text-orange-600 dark:text-orange-400">
+                    Trial: {plansResponse.data.currentUser.trialDaysRemaining} days remaining
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
+
+          {/* Trial Status */}
+          {trialStatusResponse?.data?.isInTrial && (
+            <div className="bg-orange-50 dark:bg-orange-900 border border-orange-200 dark:border-orange-700 rounded-lg p-4 mb-8 max-w-md mx-auto">
+              <p className="text-orange-800 dark:text-orange-200">
+                <span className="font-semibold">Trial Active</span>
+                <span className="block text-sm mt-1">
+                  {trialStatusResponse.data.trialDaysRemaining} days remaining
+                </span>
+                <span className="block text-xs mt-1">
+                  Trial ends: {new Date(trialStatusResponse.data.trialEndDate).toLocaleDateString()}
+                </span>
+              </p>
+            </div>
+          )}
           
           {/* Billing Toggle */}
           <div className="flex items-center justify-center mb-8">
@@ -64,7 +298,7 @@ const Plans: React.FC = () => {
             </span>
             {billingCycle === 'yearly' && (
               <span className="ml-2 bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
-                Save 20%
+                Better Value
               </span>
             )}
           </div>
@@ -76,13 +310,13 @@ const Plans: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {plans?.map((plan) => {
-              const planId = plan.id;
-              const isCurrentPlan = user?.plan === planId && user?.planStatus === 'active';
+            {transformedPlans.map((plan: any) => {
+              const isCurrentPlan = plansResponse?.data?.currentUser?.plan === plan.id && plansResponse?.data?.currentUser?.planStatus === 'active';
+              const isProcessingThisPlan = isProcessing === plan.id;
               
               return (
                 <div
-                  key={planId}
+                  key={plan.id}
                   className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden transition-all duration-300 hover:shadow-2xl ${
                     plan.popular ? 'ring-2 ring-blue-500 scale-105' : ''
                   }`}
@@ -101,10 +335,10 @@ const Plans: React.FC = () => {
                       </h3>
                       <div className="mb-4">
                         <span className="text-4xl font-bold text-gray-900 dark:text-white">
-                          ${formatPrice(plan.price)}
+                          ₹{formatPrice(plan.price).toLocaleString()}
                         </span>
                         <span className="text-gray-500 dark:text-gray-400">
-                          /{billingCycle === 'monthly' ? 'month' : 'year'}
+                          /{billingCycle}
                         </span>
                       </div>
                       <p className="text-gray-600 dark:text-gray-300">
@@ -112,30 +346,35 @@ const Plans: React.FC = () => {
                       </p>
                     </div>
 
-                    <div className="space-y-4 mb-8">
-                      {plan.features?.map((feature: string, index: number) => (
-                        <div key={index} className="flex items-center">
-                          <Check className="w-5 h-5 text-green-500 mr-3 flex-shrink-0" />
-                          <span className="text-gray-700 dark:text-gray-300">{feature}</span>
+                    <div className="space-y-3 mb-8 max-h-60 overflow-y-auto">
+                      {plan.displayFeatures?.map((feature: string, index: number) => (
+                        <div key={index} className="flex items-start">
+                          <Check className="w-5 h-5 text-green-500 mr-3 flex-shrink-0 mt-0.5" />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{feature}</span>
                         </div>
                       ))}
                     </div>
 
                     <div className="text-center">
                       <button 
-                        onClick={() => handleSelectPlan(planId)}
-                        className={`w-full py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${
+                        onClick={() => handleSelectPlan(plan.id)}
+                        disabled={isCurrentPlan || isProcessingThisPlan}
+                        className={`w-full py-3 px-6 rounded-xl font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                           plan.popular
                             ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 shadow-lg'
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
                       >
-                        {user?.plan === planId && user?.planStatus === 'active' 
-                          ? 'Current Plan' 
-                          : isInTrial 
-                          ? 'Upgrade Now' 
-                          : 'Select Plan'
-                        }
+                        {isProcessingThisPlan ? (
+                          <div className="flex items-center justify-center">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Processing...
+                          </div>
+                        ) : isCurrentPlan ? (
+                          'Current Plan'
+                        ) : (
+                          'Select Plan'
+                        )}
                       </button>
                     </div>
                   </div>
@@ -152,7 +391,7 @@ const Plans: React.FC = () => {
               Why Choose Our Platform?
             </h2>
             <p className="text-xl text-gray-600 dark:text-gray-300">
-              Everything you need to create amazing content with AI
+              Everything you need for powerful email and WhatsApp marketing
             </p>
           </div>
 
@@ -162,10 +401,10 @@ const Plans: React.FC = () => {
                 <Zap className="w-8 h-8 text-blue-600 dark:text-blue-400" />
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                Lightning Fast
+                High Volume Sending
               </h3>
               <p className="text-gray-600 dark:text-gray-300">
-                Generate high-quality content in seconds with our advanced AI models
+                Send thousands of emails and WhatsApp messages with enterprise-grade delivery
               </p>
             </div>
 
@@ -174,10 +413,10 @@ const Plans: React.FC = () => {
                 <Shield className="w-8 h-8 text-green-600 dark:text-green-400" />
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                Secure & Private
+                Email Validation
               </h3>
               <p className="text-gray-600 dark:text-gray-300">
-                Your data is encrypted and never shared with third parties
+                Ensure high deliverability with built-in email validation and verification
               </p>
             </div>
 
@@ -186,10 +425,10 @@ const Plans: React.FC = () => {
                 <Users className="w-8 h-8 text-purple-600 dark:text-purple-400" />
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                Team Collaboration
+                Multi-Channel Marketing
               </h3>
               <p className="text-gray-600 dark:text-gray-300">
-                Work together with your team on projects and share resources
+                Reach your audience through email, WhatsApp, and other channels
               </p>
             </div>
 
@@ -198,10 +437,10 @@ const Plans: React.FC = () => {
                 <Headphones className="w-8 h-8 text-orange-600 dark:text-orange-400" />
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                24/7 Support
+                Advanced Analytics
               </h3>
               <p className="text-gray-600 dark:text-gray-300">
-                Get help whenever you need it with our dedicated support team
+                Track performance with detailed analytics and reporting tools
               </p>
             </div>
           </div>

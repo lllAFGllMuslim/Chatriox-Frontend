@@ -51,7 +51,7 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
   const { data: smtpConfigs, isLoading: smtpLoading } = useQuery({
     queryKey: ['smtp-configs'],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/smtp/configs`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/smtp/configs`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -63,7 +63,7 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
   const { data: templates, isLoading: templatesLoading } = useQuery({
     queryKey: ['templates'],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/templates`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/templates`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -75,7 +75,7 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
   const { data: contactLists, isLoading: contactsLoading } = useQuery({
     queryKey: ['contact-lists'],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/contacts/lists`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -86,7 +86,7 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
   // Create campaign mutation
   const createCampaignMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/campaigns/create`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/campaigns/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
