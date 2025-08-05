@@ -153,6 +153,38 @@ const Plans: React.FC = () => {
     return billingCycle === 'yearly' ? price.yearly : price.monthly;
   };
 
+  // Payment verification function
+  const verifyPayment = async (orderId: string, planId: string, billingCycle: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/verify-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          orderId,
+          planId,
+          billingCycle
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('Payment successful! Your plan has been activated.');
+        // Refresh the page or redirect to dashboard
+        window.location.reload();
+      } else {
+        alert('Payment verification failed. Please contact support.');
+      }
+    } catch (error) {
+      console.error('Error verifying payment:', error);
+      alert('Payment verification failed. Please contact support.');
+    }
+  };
+
   const handleSelectPlan = async (planId: string) => {
     if (isProcessing) return;
     
@@ -164,6 +196,13 @@ const Plans: React.FC = () => {
 
     // If it's the current active plan, do nothing
     if (plansResponse?.data?.currentUser?.plan === planId && plansResponse?.data?.currentUser?.planStatus === 'active') {
+      return;
+    }
+
+    // Debug: Check if Cashfree SDK is loaded
+    console.log('window.Cashfree:', (window as any).Cashfree);
+    if (!(window as any).Cashfree) {
+      alert('Payment system is not ready. Please refresh the page and try again.');
       return;
     }
 
@@ -189,25 +228,39 @@ const Plans: React.FC = () => {
       }
 
       if (result.success && result.data?.paymentSessionId) {
-        // Initialize Cashfree payment
-        const cashfree = new (window as any).Cashfree({
-          mode: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox'
-        });
+        // ✅ CORRECT: Initialize Cashfree SDK first, then call checkout
+        try {
+          // Step 1: Initialize the Cashfree SDK
+          const cashfree = (window as any).Cashfree({
+            mode: 'production' // Use 'sandbox' for testing
+          });
 
-        const checkoutOptions = {
-          paymentSessionId: result.data.paymentSessionId,
-          redirectTarget: '_self'
-        };
+          // Step 2: Call checkout method
+          const checkoutOptions = {
+            paymentSessionId: result.data.paymentSessionId,
+            redirectTarget: '_self'
+          };
 
-        cashfree.checkout(checkoutOptions).then((result: any) => {
-          if (result.error) {
-            console.error('Payment error:', result.error);
-            alert('Payment failed. Please try again.');
-          }
-          if (result.redirect) {
-            console.log('Payment completed');
-          }
-        });
+          cashfree.checkout(checkoutOptions).then((checkoutResult: any) => {
+            if (checkoutResult.error) {
+              console.error('Payment error:', checkoutResult.error);
+              alert('Payment failed: ' + checkoutResult.error.message);
+            }
+            if (checkoutResult.redirect) {
+              console.log('Payment completed, redirecting...');
+            }
+            if (checkoutResult.paymentDetails) {
+              console.log('Payment successful:', checkoutResult.paymentDetails);
+              verifyPayment(result.data.orderId, planId, billingCycle);
+            }
+          }).catch((error: any) => {
+            console.error('Cashfree SDK error:', error);
+            alert('Payment initialization failed. Please try again.');
+          });
+        } catch (error) {
+          console.error('Error initializing Cashfree:', error);
+          alert('Payment system initialization failed. Please refresh and try again.');
+        }
       }
     } catch (error) {
       console.error('Error creating order:', error);
