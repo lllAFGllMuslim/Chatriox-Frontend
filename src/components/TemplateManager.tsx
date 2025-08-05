@@ -44,7 +44,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({ isOpen, onClose }) =>
       if (selectedCategory !== 'all') params.append('category', selectedCategory);
       if (selectedType !== 'all') params.append('type', selectedType);
       
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/templates?${params}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/templates?${params}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -55,7 +55,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({ isOpen, onClose }) =>
   // Delete template mutation
   const deleteTemplateMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/templates/${id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/templates/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
@@ -69,7 +69,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({ isOpen, onClose }) =>
   // Download template
   const handleDownload = async (template: any) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/templates/download/${template._id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/templates/download/${template._id}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       

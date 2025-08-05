@@ -43,7 +43,7 @@ const MailScraper: React.FC = () => {
   const { data: jobs, isLoading: jobsLoading } = useQuery({
     queryKey: ['scraping-jobs'],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/scraper/jobs`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/scraper/jobs`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -53,7 +53,7 @@ const MailScraper: React.FC = () => {
   // Start scraping mutation
   const startScrapingMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/scraper/start`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/scraper/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -73,7 +73,7 @@ const MailScraper: React.FC = () => {
   // Cancel job mutation
   const cancelJobMutation = useMutation({
     mutationFn: async (jobId: string) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/scraper/jobs/${jobId}/cancel`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/scraper/jobs/${jobId}/cancel`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
@@ -87,7 +87,7 @@ const MailScraper: React.FC = () => {
   // Download results mutation
   const downloadResultsMutation = useMutation({
     mutationFn: async (jobId: string) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/scraper/jobs/${jobId}/results`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/scraper/jobs/${jobId}/results`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       
