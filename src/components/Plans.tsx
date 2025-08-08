@@ -153,69 +153,130 @@ const Plans: React.FC = () => {
     return billingCycle === 'yearly' ? price.yearly : price.monthly;
   };
 
-  const handleSelectPlan = async (planId: string) => {
-    if (isProcessing) return;
-    
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/login');
-      return;
-    }
-
-    // If it's the current active plan, do nothing
-    if (plansResponse?.data?.currentUser?.plan === planId && plansResponse?.data?.currentUser?.planStatus === 'active') {
-      return;
-    }
-
-    setIsProcessing(planId);
-
+  // Payment verification function
+  const verifyPayment = async (orderId: string, planId: string, billingCycle: string) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/create-order`, {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/verify-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ 
-          planId: planId,
-          billingCycle: billingCycle
+          orderId,
+          planId,
+          billingCycle
         })
       });
 
       const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || 'Failed to create order');
-      }
-
-      if (result.success && result.data?.paymentSessionId) {
-        // Initialize Cashfree payment
-        const cashfree = new (window as any).Cashfree({
-          mode: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox'
-        });
-
-        const checkoutOptions = {
-          paymentSessionId: result.data.paymentSessionId,
-          redirectTarget: '_self'
-        };
-
-        cashfree.checkout(checkoutOptions).then((result: any) => {
-          if (result.error) {
-            console.error('Payment error:', result.error);
-            alert('Payment failed. Please try again.');
-          }
-          if (result.redirect) {
-            console.log('Payment completed');
-          }
-        });
+      
+      if (result.success) {
+        alert('Payment successful! Your plan has been activated.');
+        // Refresh the page or redirect to dashboard
+        window.location.reload();
+      } else {
+        alert('Payment verification failed. Please contact support.');
       }
     } catch (error) {
-      console.error('Error creating order:', error);
-      alert(error instanceof Error ? error.message : 'Failed to process plan selection');
-    } finally {
-      setIsProcessing(null);
+      console.error('Error verifying payment:', error);
+      alert('Payment verification failed. Please contact support.');
     }
   };
+
+  const handleSelectPlan = async (planId: string) => {
+  if (isProcessing) return;
+  
+  const token = localStorage.getItem('token');
+  if (!token) {
+    navigate('/login');
+    return;
+  }
+
+  // If it's the current active plan, do nothing
+  if (plansResponse?.data?.currentUser?.plan === planId && plansResponse?.data?.currentUser?.planStatus === 'active') {
+    return;
+  }
+
+  // Debug: Check if Cashfree SDK is loaded
+  console.log('window.Cashfree:', (window as any).Cashfree);
+  if (!(window as any).Cashfree) {
+    alert('Payment system is not ready. Please refresh the page and try again.');
+    return;
+  }
+
+  setIsProcessing(planId);
+
+  try {
+    // 🔥 STORE PLAN SELECTION FOR SUCCESS PAGE
+    localStorage.setItem('selectedPlanId', planId);
+    localStorage.setItem('selectedBillingCycle', billingCycle);
+
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/create-order`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ 
+        planId: planId,
+        billingCycle: billingCycle
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.message || 'Failed to create order');
+    }
+
+    if (result.success && result.data?.paymentSessionId) {
+      try {
+        // Step 1: Initialize the Cashfree SDK
+        const cashfree = (window as any).Cashfree({
+          mode: 'production' // Use 'sandbox' for testing
+        });
+
+        // Step 2: Call checkout method
+        const checkoutOptions = {
+          paymentSessionId: result.data.paymentSessionId,
+          redirectTarget: '_self' // This will redirect to your return URL after payment
+        };
+
+        // 🔥 REMOVE THE OLD VERIFICATION LOGIC - IT WON'T WORK WITH REDIRECT
+        cashfree.checkout(checkoutOptions).then((checkoutResult: any) => {
+          if (checkoutResult.error) {
+            console.error('Payment error:', checkoutResult.error);
+            alert('Payment failed: ' + checkoutResult.error.message);
+            // Clean up on error
+            localStorage.removeItem('selectedPlanId');
+            localStorage.removeItem('selectedBillingCycle');
+          }
+          // Don't handle success here - it will be handled by the success page
+        }).catch((error: any) => {
+          console.error('Cashfree SDK error:', error);
+          alert('Payment initialization failed. Please try again.');
+          // Clean up on error
+          localStorage.removeItem('selectedPlanId');
+          localStorage.removeItem('selectedBillingCycle');
+        });
+      } catch (error) {
+        console.error('Error initializing Cashfree:', error);
+        alert('Payment system initialization failed. Please refresh and try again.');
+        localStorage.removeItem('selectedPlanId');
+        localStorage.removeItem('selectedBillingCycle');
+      }
+    }
+  } catch (error) {
+    console.error('Error creating order:', error);
+    alert(error instanceof Error ? error.message : 'Failed to process plan selection');
+    localStorage.removeItem('selectedPlanId');
+    localStorage.removeItem('selectedBillingCycle');
+  } finally {
+    setIsProcessing(null);
+  }
+};
 
   if (error) {
     return (
