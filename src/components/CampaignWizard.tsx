@@ -81,7 +81,7 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
     'Content-Type': 'application/json'
   });
 
-  const getApiUrl = () => import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const getApiUrl = () => import.meta.env.VITE_API_URL || 'https://papakha.in';
 
   // Fetch SMTP configurations
   const fetchSmtpConfigs = async () => {
