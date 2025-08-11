@@ -27,7 +27,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const navigationItems = [
     { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
     { name: 'Email Sender', href: '/email-sender', icon: Mail },
-    { name: 'Gmail Sender', href: '/gmail-sender', icon: Mail },
     { name: 'WhatsApp Sender', href: '/whatsapp-sender', icon: MessageSquare },
     { name: 'Lead Scraper', href: '/mail-scraper', icon: Search },
     { name: 'Email Validation', href: '/email-validation', icon: Shield },
