@@ -91,7 +91,7 @@ const WhatsAppSender: React.FC = () => {
   useEffect(() => {
     if (!user?.id) return;
 
-    const newSocket = io('https://papakha.in');
+    const newSocket = io('http://localhost:5000');
     setSocket(newSocket);
 
     // Join user room immediately
@@ -187,7 +187,7 @@ const WhatsAppSender: React.FC = () => {
   const { data: accounts, isLoading: accountsLoading } = useQuery({
     queryKey: ['whatsapp-accounts'],
     queryFn: async () => {
-      const response = await fetch('https://papakha.in/api/whatsapp/accounts', {
+      const response = await fetch('http://localhost:5000/api/whatsapp/accounts', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -198,7 +198,7 @@ const WhatsAppSender: React.FC = () => {
   const { data: contactLists, isLoading: contactsLoading } = useQuery({
     queryKey: ['whatsapp-contact-lists'],
     queryFn: async () => {
-      const response = await fetch('https://papakha.in/api/whatsapp-web/contacts/lists', {
+      const response = await fetch('http://localhost:5000/api/whatsapp-web/contacts/lists', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -209,7 +209,7 @@ const WhatsAppSender: React.FC = () => {
   const { data: campaigns, isLoading: campaignsLoading } = useQuery({
     queryKey: ['whatsapp-campaigns'],
     queryFn: async () => {
-      const response = await fetch('https://papakha.in/api/whatsapp/campaigns', {
+      const response = await fetch('http://localhost:5000/api/whatsapp/campaigns', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -220,7 +220,7 @@ const WhatsAppSender: React.FC = () => {
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
     queryKey: ['whatsapp-analytics'],
     queryFn: async () => {
-      const response = await fetch('https://papakha.in/api/whatsapp-web/analytics', {
+      const response = await fetch('http://localhost:5000/api/whatsapp-web/analytics', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -230,7 +230,7 @@ const WhatsAppSender: React.FC = () => {
   // Connect WhatsApp account mutation
   const connectAccountMutation = useMutation({
     mutationFn: async (accountData: any) => {
-      const response = await fetch('https://papakha.in/api/whatsapp-web/connect', {
+      const response = await fetch('http://localhost:5000/api/whatsapp-web/connect', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -257,7 +257,7 @@ const WhatsAppSender: React.FC = () => {
         formData.append('media', mediaFile);
       }
 
-      const response = await fetch('https://papakha.in/api/whatsapp-web/send', {
+      const response = await fetch('http://localhost:5000/api/whatsapp-web/send', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`
@@ -283,7 +283,7 @@ const WhatsAppSender: React.FC = () => {
       formData.append('listName', data.listName);
       formData.append('listDescription', data.listDescription);
 
-      const response = await fetch('https://papakha.in/api/whatsapp-web/contacts/import', {
+      const response = await fetch('http://localhost:5000/api/whatsapp-web/contacts/import', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`

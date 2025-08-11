@@ -6,11 +6,7 @@ import {
   Plus, 
   Edit, 
   Trash2, 
-  TestTube, 
   CheckCircle, 
-  XCircle, 
-  Eye, 
-  EyeOff,
   AlertCircle
 } from 'lucide-react';
 
@@ -23,6 +19,8 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
   const [showForm, setShowForm] = useState(false);
   const [editingConfig, setEditingConfig] = useState<any>(null);
   const [showPassword, setShowPassword] = useState<{ [key: string]: boolean }>({});
+  const [errorMessage, setErrorMessage] = useState('');
+
   const [formData, setFormData] = useState({
     name: '',
     host: '',
@@ -40,7 +38,7 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
   const { data: smtpConfigs, isLoading } = useQuery({
     queryKey: ['smtp-configs'],
     queryFn: async () => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/configs`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/smtp/configs`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -51,7 +49,7 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
   // Create SMTP config mutation
   const createConfigMutation = useMutation({
     mutationFn: async (data: any) => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/configs`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/smtp/configs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -59,19 +57,25 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
         },
         body: JSON.stringify(data)
       });
-      return response.json();
+      const json = await response.json();
+      if (!json.success) throw new Error(json.message || 'SMTP verification failed');
+      return json;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['smtp-configs'] });
       setShowForm(false);
       resetForm();
+      setErrorMessage('');
+    },
+    onError: (error: any) => {
+      setErrorMessage(error.message || 'Failed to save SMTP config');
     }
   });
 
   // Update SMTP config mutation
   const updateConfigMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/configs/${id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/smtp/configs/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -79,35 +83,27 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
         },
         body: JSON.stringify(data)
       });
-      return response.json();
+      const json = await response.json();
+      if (!json.success) throw new Error(json.message || 'SMTP verification failed');
+      return json;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['smtp-configs'] });
       setEditingConfig(null);
       setShowForm(false);
       resetForm();
+      setErrorMessage('');
+    },
+    onError: (error: any) => {
+      setErrorMessage(error.message || 'Failed to update SMTP config');
     }
   });
 
   // Delete SMTP config mutation
   const deleteConfigMutation = useMutation({
     mutationFn: async (id: string) => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/configs/${id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/smtp/configs/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['smtp-configs'] });
-    }
-  });
-
-  // Test SMTP config mutation
-  const testConfigMutation = useMutation({
-    mutationFn: async (id: string) => {
-     const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/smtp/test/${id}`, {
-        method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -128,6 +124,7 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
       fromName: '',
       fromEmail: ''
     });
+    setErrorMessage('');
   };
 
   const handleEdit = (config: any) => {
@@ -138,11 +135,12 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
       port: config.port,
       secure: config.secure,
       username: config.username,
-      password: '', // Don't populate password for security
+      password: '', // Don't populate password for security reasons
       fromName: config.fromName,
       fromEmail: config.fromEmail
     });
     setShowForm(true);
+    setErrorMessage('');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -177,14 +175,23 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
             </div>
             <div className="flex items-center space-x-3">
               <button
-                onClick={() => setShowForm(true)}
+                onClick={() => {
+                  setShowForm(true);
+                  setEditingConfig(null);
+                  resetForm();
+                }}
                 className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-xl transition-colors flex items-center space-x-2"
               >
                 <Plus size={16} />
                 <span>Add SMTP</span>
               </button>
               <button
-                onClick={onClose}
+                onClick={() => {
+                  onClose();
+                  setShowForm(false);
+                  setEditingConfig(null);
+                  resetForm();
+                }}
                 className="text-white hover:text-gray-200 transition-colors"
               >
                 ✕
@@ -251,7 +258,7 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
                     </label>
                     <input
                       type="number"
-                     value={formData.port.toString()}
+                      value={formData.port.toString()}
                       onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) })}
                       className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="587"
@@ -323,6 +330,12 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
                     />
                   </div>
                 </div>
+{errorMessage && (
+  <div className="text-red-600 text-sm mb-4">
+    <AlertCircle className="inline mr-1" size={16} />
+    {errorMessage}
+  </div>
+)}
 
                 <div className="flex items-center justify-end space-x-3 pt-6 border-t border-gray-200 dark:border-gray-600">
                   <button
@@ -378,14 +391,6 @@ const SMTPManager: React.FC<SMTPManagerProps> = ({ isOpen, onClose }) => {
                             <AlertCircle className="text-yellow-500" size={16} />
                           )}
                           <div className="flex space-x-1">
-                            <button
-                              onClick={() => testConfigMutation.mutate(config._id)}
-                              disabled={testConfigMutation.isPending}
-                              className="p-1 text-blue-600 hover:text-blue-700 disabled:opacity-50"
-                              title="Test Configuration"
-                            >
-                              <TestTube size={14} />
-                            </button>
                             <button
                               onClick={() => handleEdit(config)}
                               className="p-1 text-gray-600 hover:text-gray-700 dark:hover:text-gray-300"

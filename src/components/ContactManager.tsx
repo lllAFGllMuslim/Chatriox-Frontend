@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
@@ -29,12 +29,14 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   const [newListDescription, setNewListDescription] = useState('');
 
   const queryClient = useQueryClient();
+  const [importProgress, setImportProgress] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch contact lists
   const { data: contactLists, isLoading } = useQuery({
     queryKey: ['contact-lists'],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/contacts/lists`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -46,7 +48,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   const { data: listDetails, isLoading: listLoading } = useQuery({
     queryKey: ['contact-list', selectedList?._id],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists/${selectedList._id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/contacts/lists/${selectedList._id}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -57,7 +59,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   // Create contact list mutation
   const createListMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/contacts/lists`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -78,7 +80,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   // Validate contacts mutation
   const validateContactsMutation = useMutation({
     mutationFn: async (listId: string) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists/${listId}/validate`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/contacts/lists/${listId}/validate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -96,7 +98,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   // Delete contact list mutation
   const deleteListMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists/${id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/contacts/lists/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
@@ -107,7 +109,26 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
       setSelectedList(null);
     }
   });
-
+// Import contacts mutation
+const importContactsMutation = useMutation({
+  mutationFn: async ({ listId, file }: { listId: string; file: File }) => {
+    const formData = new FormData();
+    formData.append('csvFile', file);
+    
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/contacts/lists/${listId}/import`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      },
+      body: formData
+    });
+    return response.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['contact-list', selectedList?._id] });
+    setImportProgress(null);
+  }
+});
   const handleCreateList = (e: React.FormEvent) => {
     e.preventDefault();
     createListMutation.mutate({
@@ -115,7 +136,17 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
       description: newListDescription
     });
   };
+const handleImportClick = () => {
+  fileInputRef.current?.click();
+};
 
+const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (file && selectedList) {
+    setImportProgress(0);
+    importContactsMutation.mutate({ listId: selectedList._id, file });
+  }
+};
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'valid':
@@ -315,10 +346,21 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
                       <TestTube size={16} />
                       <span>{validateContactsMutation.isPending ? 'Validating...' : 'Validate'}</span>
                     </button>
-                    <button className="flex items-center space-x-2 px-4 py-2 text-green-600 bg-green-50 dark:bg-green-900/20 rounded-xl hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors">
-                      <Upload size={16} />
-                      <span>Import</span>
-                    </button>
+<button 
+  onClick={handleImportClick}
+  disabled={importContactsMutation.isPending}
+  className="flex items-center space-x-2 px-4 py-2 text-green-600 bg-green-50 dark:bg-green-900/20 rounded-xl hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors disabled:opacity-50"
+>
+  <Upload size={16} />
+  <span>{importContactsMutation.isPending ? 'Importing...' : 'Import'}</span>
+</button>
+<input
+  ref={fileInputRef}
+  type="file"
+  accept=".csv,.xlsx,.xls"
+  onChange={handleFileChange}
+  className="hidden"
+/>
                     <button
                       onClick={() => deleteListMutation.mutate(selectedList._id)}
                       disabled={deleteListMutation.isPending}

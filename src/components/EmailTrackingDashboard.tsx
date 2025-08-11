@@ -36,7 +36,7 @@ const EmailTrackingDashboard: React.FC = () => {
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
     queryKey: ['email-analytics', timeRange],
     queryFn: async () => {
-      const response = await fetch(`https://papakha.in/api/email-tracking/analytics?timeRange=${timeRange}`, {
+      const response = await fetch(`http://localhost:5000/api/email-tracking/analytics?timeRange=${timeRange}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -51,7 +51,7 @@ const EmailTrackingDashboard: React.FC = () => {
       if (statusFilter !== 'all') params.append('status', statusFilter);
       if (searchTerm) params.append('recipient', searchTerm);
       
-      const response = await fetch(`https://papakha.in/api/email-tracking/activities?${params}`, {
+      const response = await fetch(`http://localhost:5000/api/email-tracking/activities?${params}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -124,7 +124,7 @@ const EmailTrackingDashboard: React.FC = () => {
       if (statusFilter !== 'all') params.append('status', statusFilter);
       if (searchTerm) params.append('recipient', searchTerm);
 
-      const response = await fetch(`https://papakha.in/api/email-tracking/export?${params}`, {
+      const response = await fetch(`http://localhost:5000/api/email-tracking/export?${params}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
 

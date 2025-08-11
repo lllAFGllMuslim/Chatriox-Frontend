@@ -16,17 +16,32 @@ import {
   Upload,
   Download,
   Eye,
-  TestTube
+  TestTube,
+  X,
+  Plus
 } from 'lucide-react';
-import { useQuery, useMutation } from '@tanstack/react-query';
 
 interface CampaignWizardProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+interface ContactListFormData {
+  name: string;
+  description: string;
+  tags: string[];
+}
+
 const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
   const [currentStep, setCurrentStep] = useState(1);
+  const [showContactListForm, setShowContactListForm] = useState(false);
+  const [isCreatingContactList, setIsCreatingContactList] = useState(false);
+  const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
+  const [contactListForm, setContactListForm] = useState<ContactListFormData>({
+    name: '',
+    description: '',
+    tags: []
+  });
   const [campaignData, setCampaignData] = useState({
     name: '',
     subject: '',
@@ -39,6 +54,11 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
     customFromEmail: ''
   });
 
+  // API state
+  const [smtpConfigs, setSmtpConfigs] = useState({ data: [], loading: true });
+  const [templates, setTemplates] = useState({ data: [], loading: true });
+  const [contactLists, setContactLists] = useState({ data: [], loading: true });
+
   const steps = [
     { id: 1, title: 'SMTP Setup', icon: <Server size={20} />, required: true },
     { id: 2, title: 'Campaign Details', icon: <Mail size={20} />, required: true },
@@ -47,62 +67,123 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
     { id: 5, title: 'Review & Send', icon: <Send size={20} />, required: true }
   ];
 
-  // Fetch SMTP configurations
-  const { data: smtpConfigs, isLoading: smtpLoading } = useQuery({
-    queryKey: ['smtp-configs'],
-    queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/smtp/configs`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      return response.json();
-    },
-    enabled: isOpen
+  // Fetch data when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      fetchSmtpConfigs();
+      fetchTemplates();
+      fetchContactLists();
+    }
+  }, [isOpen]);
+
+  const getAuthHeaders = () => ({
+    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+    'Content-Type': 'application/json'
   });
+
+  const getApiUrl = () => import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+  // Fetch SMTP configurations
+  const fetchSmtpConfigs = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/smtp/configs`, {
+        headers: getAuthHeaders()
+      });
+      const data = await response.json();
+      setSmtpConfigs({ data: data.data || [], loading: false });
+    } catch (error) {
+      console.error('Error fetching SMTP configs:', error);
+      setSmtpConfigs({ data: [], loading: false });
+    }
+  };
 
   // Fetch templates
-  const { data: templates, isLoading: templatesLoading } = useQuery({
-    queryKey: ['templates'],
-    queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/templates`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+  const fetchTemplates = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/templates`, {
+        headers: getAuthHeaders()
       });
-      return response.json();
-    },
-    enabled: isOpen
-  });
+      const data = await response.json();
+      setTemplates({ data: data.data || [], loading: false });
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+      setTemplates({ data: [], loading: false });
+    }
+  };
 
   // Fetch contact lists
-  const { data: contactLists, isLoading: contactsLoading } = useQuery({
-    queryKey: ['contact-lists'],
-    queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+  const fetchContactLists = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/contacts/lists`, {
+        headers: getAuthHeaders()
       });
-      return response.json();
-    },
-    enabled: isOpen
-  });
-
-  // Create campaign mutation
-  const createCampaignMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/campaigns/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(data)
-      });
-      return response.json();
-    },
-    onSuccess: (data) => {
-      if (data.success) {
-        onClose();
-        // Show success message
-      }
+      const data = await response.json();
+      setContactLists({ data: data.data || [], loading: false });
+    } catch (error) {
+      console.error('Error fetching contact lists:', error);
+      setContactLists({ data: [], loading: false });
     }
-  });
+  };
+
+  // Create contact list function
+  const createContactList = async (formData: ContactListFormData) => {
+    setIsCreatingContactList(true);
+    
+    try {
+      const response = await fetch(`${getApiUrl()}/api/contacts/lists`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(formData)
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Refresh contact lists
+        await fetchContactLists();
+        
+        // Auto-select the newly created contact list
+        setCampaignData(prev => ({
+          ...prev,
+          contactListId: data.data._id
+        }));
+        
+        setShowContactListForm(false);
+        setContactListForm({ name: '', description: '', tags: [] });
+      } else {
+        alert('Failed to create contact list: ' + (data.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error creating contact list:', error);
+      alert('Failed to create contact list');
+    } finally {
+      setIsCreatingContactList(false);
+    }
+  };
+
+  // Create campaign function
+const createCampaign = async () => {
+  setIsCreatingCampaign(true);
+  try {
+    const response = await fetch(`${getApiUrl()}/api/campaigns/create`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(campaignData)
+    });
+    const data = await response.json();
+    if (data.success) {
+      onClose();
+      alert('Campaign created successfully!');
+    } else {
+      alert('Failed to create campaign: ' + (data.message || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Error creating campaign:', error);
+    alert('Failed to create campaign');
+  } finally {
+    setIsCreatingCampaign(false);
+  }
+};
 
   const handleNext = () => {
     if (currentStep < steps.length) {
@@ -117,7 +198,7 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
   };
 
   const handleSubmit = () => {
-    createCampaignMutation.mutate(campaignData);
+    createCampaign();
   };
 
   const isStepValid = (stepId: number) => {
@@ -214,11 +295,11 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
                   <p className="text-gray-600 dark:text-gray-400">Select your SMTP configuration to send emails</p>
                 </div>
 
-                {smtpLoading ? (
+                {smtpConfigs.loading ? (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
                   </div>
-                ) : smtpConfigs?.data?.length === 0 ? (
+                ) : smtpConfigs.data.length === 0 ? (
                   <div className="text-center py-8">
                     <AlertCircle className="text-yellow-500 mx-auto mb-4" size={48} />
                     <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No SMTP Configuration Found</h4>
@@ -230,7 +311,7 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {smtpConfigs?.data?.map((config: any) => (
+                    {smtpConfigs.data.map((config: any) => (
                       <div
                         key={config._id}
                         onClick={() => setCampaignData({ ...campaignData, smtpConfigId: config._id })}
@@ -332,13 +413,13 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
                   <p className="text-gray-600 dark:text-gray-400">Choose an email template for your campaign</p>
                 </div>
 
-                {templatesLoading ? (
+                {templates.loading ? (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {templates?.data?.map((template: any) => (
+                    {templates.data.map((template: any) => (
                       <div
                         key={template._id}
                         onClick={() => setCampaignData({ ...campaignData, templateId: template._id })}
@@ -408,17 +489,20 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
                   <p className="text-gray-600 dark:text-gray-400">Select your contact list for this campaign</p>
                 </div>
 
-                {contactsLoading ? (
+                {contactLists.loading ? (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto"></div>
                   </div>
-                ) : contactLists?.data?.length === 0 ? (
+                ) : contactLists.data.length === 0 ? (
                   <div className="text-center py-8">
                     <Users className="text-gray-400 mx-auto mb-4" size={48} />
                     <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No Contact Lists Found</h4>
                     <p className="text-gray-600 dark:text-gray-400 mb-6">Create a contact list or use our lead generation tools.</p>
                     <div className="flex justify-center space-x-4">
-                      <button className="bg-orange-600 text-white px-6 py-3 rounded-xl hover:bg-orange-700 transition-colors">
+                      <button 
+                        onClick={() => setShowContactListForm(true)}
+                        className="bg-orange-600 text-white px-6 py-3 rounded-xl hover:bg-orange-700 transition-colors"
+                      >
                         <Users className="inline mr-2" size={16} />
                         Create Contact List
                       </button>
@@ -429,33 +513,73 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {contactLists?.data?.map((list: any) => (
-                      <div
-                        key={list._id}
-                        onClick={() => setCampaignData({ ...campaignData, contactListId: list._id })}
-                        className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                          campaignData.contactListId === list._id
-                            ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
-                            : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
-                        }`}
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {contactLists.data.map((list: any) => (
+                        <div
+                          key={list._id}
+                          onClick={() => setCampaignData({ ...campaignData, contactListId: list._id })}
+                          className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                            campaignData.contactListId === list._id
+                              ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
+                              : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-semibold text-gray-900 dark:text-white">{list.name}</h4>
+                            <span className="text-sm text-gray-500">{list.totalContacts} contacts</span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{list.description}</p>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-green-600">{list.validContacts} valid</span>
+                            <span className="text-red-600">{list.invalidContacts} invalid</span>
+                            <span className="text-gray-500">Updated {new Date(list.updatedAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="text-center pt-6 border-t border-gray-200 dark:border-gray-600">
+                      <button 
+                        onClick={() => setShowContactListForm(true)}
+                        className="flex items-center space-x-2 mx-auto px-4 py-2 text-orange-600 bg-orange-50 dark:bg-orange-900/20 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/30"
                       >
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-semibold text-gray-900 dark:text-white">{list.name}</h4>
-                          <span className="text-sm text-gray-500">{list.totalContacts} contacts</span>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{list.description}</p>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-green-600">{list.validContacts} valid</span>
-                          <span className="text-red-600">{list.invalidContacts} invalid</span>
-                          <span className="text-gray-500">Updated {new Date(list.updatedAt).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                        <Plus size={16} />
+                        <span>Create New Contact List</span>
+                      </button>
+                    </div>
+                  </>
                 )}
               </motion.div>
             )}
+{/* Contact List Create Modal */}
+<AnimatePresence>
+  {showContactListForm && (
+    <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <div onClick={() => setShowContactListForm(false)} className="absolute inset-0 bg-black/50" />
+      <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg p-6 z-10">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Create Contact List</h3>
+          <button onClick={() => setShowContactListForm(false)}>✕</button>
+        </div>
+
+        <div className="space-y-4">
+          <input value={contactListForm.name} onChange={e => setContactListForm(prev => ({...prev, name: e.target.value}))} placeholder="Name" />
+          <textarea value={contactListForm.description} onChange={e => setContactListForm(prev => ({...prev, description: e.target.value}))} placeholder="Description" />
+          <input value={contactListForm.tags.join(',')} onChange={e => setContactListForm(prev => ({...prev, tags: e.target.value.split(',').map(t=>t.trim()).filter(Boolean)}))} placeholder="tags,comma,separated" />
+
+          <div className="flex justify-end space-x-2">
+            <button onClick={() => setShowContactListForm(false)}>Cancel</button>
+            <button onClick={() => createContactList(contactListForm)} disabled={isCreatingContactList}>
+              {isCreatingContactList ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  )}
+</AnimatePresence>
 
             {/* Step 5: Review & Send */}
             {currentStep === 5 && (
@@ -489,25 +613,25 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
                     <div>
                       <span className="text-gray-600 dark:text-gray-400">SMTP Config:</span>
                       <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                        {smtpConfigs?.data?.find((c: any) => c._id === campaignData.smtpConfigId)?.name}
+                        {smtpConfigs.data.find((c: any) => c._id === campaignData.smtpConfigId)?.name}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-600 dark:text-gray-400">Template:</span>
                       <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                        {templates?.data?.find((t: any) => t._id === campaignData.templateId)?.name}
+                        {templates.data.find((t: any) => t._id === campaignData.templateId)?.name}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-600 dark:text-gray-400">Contact List:</span>
                       <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                        {contactLists?.data?.find((l: any) => l._id === campaignData.contactListId)?.name}
+                        {contactLists.data.find((l: any) => l._id === campaignData.contactListId)?.name}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-600 dark:text-gray-400">Recipients:</span>
                       <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                        {contactLists?.data?.find((l: any) => l._id === campaignData.contactListId)?.validContacts || 0} contacts
+                        {contactLists.data.find((l: any) => l._id === campaignData.contactListId)?.validContacts || 0} contacts
                       </span>
                     </div>
                   </div>
@@ -607,23 +731,23 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
               <ChevronRight size={16} />
             </button>
           ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={!canProceed || createCampaignMutation.isPending}
-              className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {createCampaignMutation.isPending ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  <span>Creating...</span>
-                </>
-              ) : (
-                <>
-                  <Send size={16} />
-                  <span>{campaignData.scheduleType === 'now' ? 'Send Now' : 'Schedule Campaign'}</span>
-                </>
-              )}
-            </button>
+<button
+  onClick={handleSubmit}
+  disabled={!canProceed || isCreatingCampaign}
+  className="flex items-center ... bg-green-600 text-white rounded-xl ..."
+>
+  {isCreatingCampaign ? (
+    <>
+      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+      <span>Creating...</span>
+    </>
+  ) : (
+    <>
+      <Send size={16} />
+      <span>{campaignData.scheduleType === 'now' ? 'Send Now' : 'Schedule Campaign'}</span>
+    </>
+  )}
+</button>
           )}
         </div>
       </motion.div>

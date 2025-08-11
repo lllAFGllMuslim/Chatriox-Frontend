@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
+import PaymentSuccess from './components/PaymentSuccess';
 import EmailSender from './components/EmailSender';
 import GmailSender from './components/GmailSender';
 import WhatsAppSender from './components/WhatsAppSender';
@@ -66,6 +67,7 @@ const AppContent: React.FC = () => {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/email-sender" element={<EmailSender />} />
               <Route path="/gmail-sender" element={<GmailSender />} />
+              <Route path="/payment/success" element={<PaymentSuccess />} />
               <Route path="/whatsapp-sender" element={<WhatsAppSender />} />
               <Route path="/mail-scraper" element={<MailScraper />} />
               <Route path="/email-validation" element={<EmailValidation />} />
