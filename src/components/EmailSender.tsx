@@ -159,12 +159,9 @@ const EmailSender: React.FC = () => {
                     Required
                   </span>
                 )}
-                <div key={item.step} className="text-center relative">
-                  {/* ... */}
-                  {index < 4 && (
-                    <div className="hidden md:block absolute top-6 left-full w-6 h-0.5 bg-gray-200 dark:bg-gray-600 transform translate-x-2"></div>
-                  )}
-                </div>
+                {index < 4 && (
+                  <div className="hidden md:block absolute top-6 left-full w-full h-0.5 bg-gray-200 dark:bg-gray-600 transform translate-x-2"></div>
+                )}
               </div>
             ))}
           </div>

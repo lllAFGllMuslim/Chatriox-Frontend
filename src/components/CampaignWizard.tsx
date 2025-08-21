@@ -24,24 +24,12 @@ import {
 interface CampaignWizardProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenContactManager?: () => void; // Add this line
 }
 
-interface ContactListFormData {
-  name: string;
-  description: string;
-  tags: string[];
-}
 
-const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
+const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose, onOpenContactManager }) => {
   const [currentStep, setCurrentStep] = useState(1);
-  const [showContactListForm, setShowContactListForm] = useState(false);
-  const [isCreatingContactList, setIsCreatingContactList] = useState(false);
-  const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
-  const [contactListForm, setContactListForm] = useState<ContactListFormData>({
-    name: '',
-    description: '',
-    tags: []
-  });
   const [campaignData, setCampaignData] = useState({
     name: '',
     subject: '',
@@ -53,6 +41,7 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
     customFromName: '',
     customFromEmail: ''
   });
+const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
 
   // API state
   const [smtpConfigs, setSmtpConfigs] = useState({ data: [], loading: true });
@@ -126,40 +115,6 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose }) => {
   };
 
   // Create contact list function
-  const createContactList = async (formData: ContactListFormData) => {
-    setIsCreatingContactList(true);
-    
-    try {
-      const response = await fetch(`${getApiUrl()}/api/contacts/lists`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(formData)
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        // Refresh contact lists
-        await fetchContactLists();
-        
-        // Auto-select the newly created contact list
-        setCampaignData(prev => ({
-          ...prev,
-          contactListId: data.data._id
-        }));
-        
-        setShowContactListForm(false);
-        setContactListForm({ name: '', description: '', tags: [] });
-      } else {
-        alert('Failed to create contact list: ' + (data.message || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Error creating contact list:', error);
-      alert('Failed to create contact list');
-    } finally {
-      setIsCreatingContactList(false);
-    }
-  };
 
   // Create campaign function
 const createCampaign = async () => {
@@ -500,12 +455,12 @@ const createCampaign = async () => {
                     <p className="text-gray-600 dark:text-gray-400 mb-6">Create a contact list or use our lead generation tools.</p>
                     <div className="flex justify-center space-x-4">
                       <button 
-                        onClick={() => setShowContactListForm(true)}
-                        className="bg-orange-600 text-white px-6 py-3 rounded-xl hover:bg-orange-700 transition-colors"
-                      >
-                        <Users className="inline mr-2" size={16} />
-                        Create Contact List
-                      </button>
+  onClick={onOpenContactManager}
+  className="bg-orange-600 text-white px-6 py-3 rounded-xl hover:bg-orange-700 transition-colors"
+>
+  <Users className="inline mr-2" size={16} />
+  Manage Contact Lists
+</button>
                       <button className="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors">
                         <TestTube className="inline mr-2" size={16} />
                         Lead Scraper
@@ -553,34 +508,6 @@ const createCampaign = async () => {
               </motion.div>
             )}
 {/* Contact List Create Modal */}
-<AnimatePresence>
-  {showContactListForm && (
-    <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <div onClick={() => setShowContactListForm(false)} className="absolute inset-0 bg-black/50" />
-      <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg p-6 z-10">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Create Contact List</h3>
-          <button onClick={() => setShowContactListForm(false)}>✕</button>
-        </div>
-
-        <div className="space-y-4">
-          <input value={contactListForm.name} onChange={e => setContactListForm(prev => ({...prev, name: e.target.value}))} placeholder="Name" />
-          <textarea value={contactListForm.description} onChange={e => setContactListForm(prev => ({...prev, description: e.target.value}))} placeholder="Description" />
-          <input value={contactListForm.tags.join(',')} onChange={e => setContactListForm(prev => ({...prev, tags: e.target.value.split(',').map(t=>t.trim()).filter(Boolean)}))} placeholder="tags,comma,separated" />
-
-          <div className="flex justify-end space-x-2">
-            <button onClick={() => setShowContactListForm(false)}>Cancel</button>
-            <button onClick={() => createContactList(contactListForm)} disabled={isCreatingContactList}>
-              {isCreatingContactList ? 'Creating...' : 'Create'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  )}
-</AnimatePresence>
-
             {/* Step 5: Review & Send */}
             {currentStep === 5 && (
               <motion.div

@@ -1,324 +1,343 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
-  MessageSquare, 
-  Plus, 
-  QrCode, 
-  Send, 
-  Users, 
-  Image, 
-  FileText, 
-  Video, 
-  Mic,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  RefreshCw,
-  Settings,
-  BarChart3,
-  Clock,
-  Zap,
-  Shield,
-  Upload,
-  Download,
-  Eye,
-  Filter,
-  Search,
-  Phone,
-  Mail,
-  Building,
-  Trash2,
-  Play,
-  Pause,
-  StopCircle,
-  TrendingUp,
-  Activity,
-  MousePointer
+  MessageSquare, Plus, QrCode, Send, Users, Image, FileText, Video,
+  CheckCircle, XCircle, AlertTriangle, RefreshCw, BarChart3, Clock,
+  Upload, Eye, Play, Pause, TrendingUp, Activity, Wifi, WifiOff, Power, RotateCcw
 } from 'lucide-react';
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell
 } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import io from 'socket.io-client';
 
-const WhatsAppSender: React.FC = () => {
+const API_BASE = 'https://papakha.in';
+
+const WhatsAppSender = () => {
   const { user } = useAuth();
-  const [selectedAccount, setSelectedAccount] = useState<any>(null);
+  const [selectedAccount, setSelectedAccount] = useState(null);
   const [showQRCode, setShowQRCode] = useState(false);
   const [qrCodeData, setQrCodeData] = useState('');
   const [messageType, setMessageType] = useState('text');
   const [messageContent, setMessageContent] = useState('');
-  const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
-  const [mediaFile, setMediaFile] = useState<File | null>(null);
-  const [showContactImport, setShowContactImport] = useState(false);
+  const [recipients, setRecipients] = useState('');
+  const [mediaFile, setMediaFile] = useState(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
-  const [socket, setSocket] = useState<any>(null);
-  const [connectionStatus, setConnectionStatus] = useState<{ [key: string]: string }>({});
-  const [sendingProgress, setSendingProgress] = useState<any>(null);
+  const [socket, setSocket] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState({});
+  const [sendingProgress, setSendingProgress] = useState(null);
+  const [notifications, setNotifications] = useState([]);
 
   const queryClient = useQueryClient();
+  const socketRef = useRef(null);
 
-  const isFormValid = () => {
-    // Check if contacts are selected
-    if (selectedContacts.length === 0) return false;
-    
-    // For text messages, content is required
-    if (messageType === 'text') {
-      return messageContent.trim().length > 0;
-    }
-    
-    // For media messages, only file is required, caption is optional
-    if (messageType !== 'text') {
-      return mediaFile !== null;
-    }
-    
-    return false;
+  // Notification helper
+  const addNotification = (type, message) => {
+    const id = Date.now().toString();
+    setNotifications(prev => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 5000);
   };
 
-  // Update your useEffect for Socket.IO connection
+  // Socket.IO setup
   useEffect(() => {
     if (!user?.id) return;
 
-    const newSocket = io('https://papakha.in');
+    const newSocket = io(API_BASE, {
+      auth: { token: localStorage.getItem('token') },
+      reconnection: false,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
+
+    socketRef.current = newSocket;
     setSocket(newSocket);
 
-    // Join user room immediately
-    newSocket.emit('join_user_room', user.id);
-    console.log('Joined user room:', user.id);
-
-    // Listen for WhatsApp events
-    newSocket.on('qr_code', (data) => {
-      console.log('QR Code received:', data);
-      
-      // Only show QR code if account is actually connecting (not already authenticated)
-      const currentStatus = connectionStatus[data.accountId];
-      if (currentStatus !== 'ready' && currentStatus !== 'authenticated') {
-        setQrCodeData(data.qrCode);
-        setShowQRCode(true);
-        setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'connecting' }));
-      } else {
-        console.log('Ignoring QR code - account already authenticated:', data.accountId);
-      }
-    });
-
-    newSocket.on('whatsapp_authenticated', (data) => {
-      console.log('WhatsApp authenticated:', data);
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'authenticated' }));
-      // Hide QR code when authenticated
-      setShowQRCode(false);
-    });
-
-    newSocket.on('whatsapp_ready', (data) => {
-      console.log('WhatsApp ready:', data);
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'ready' }));
-      setShowQRCode(false);
-      setQrCodeData(''); // Clear QR code data
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-    });
-
-    newSocket.on('whatsapp_disconnected', (data) => {
-      console.log('WhatsApp disconnected:', data);
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'disconnected' }));
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-    });
-
-    newSocket.on('campaign_progress', (data) => {
-      setSendingProgress(data);
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-campaigns'] });
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-messages'] });
-    });
-    
-    newSocket.on('campaign_completed', (data) => {
-      setSendingProgress(null);
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-campaigns'] });
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-messages'] });
-      // Show success notification
-    });
-
-    // Add connection event listeners for debugging
+    // Connection events
     newSocket.on('connect', () => {
-      console.log('Socket connected:', newSocket.id);
+      console.log('Socket connected');
+      newSocket.emit('join_user_room', user.id);
+      addNotification('success', 'Real-time connection established');
     });
 
     newSocket.on('disconnect', () => {
-      console.log('Socket disconnected');
+      addNotification('error', 'Real-time connection lost');
+    });
+
+    // WhatsApp events
+    newSocket.on('qr_code', (data) => {
+      console.log('QR Code received:', data);
+      setQrCodeData(data.qrCode);
+      setShowQRCode(true);
+      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'connecting' }));
+    });
+
+    newSocket.on('whatsapp_authenticated', (data) => {
+      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'authenticated' }));
+      addNotification('success', 'WhatsApp authenticated successfully');
+    });
+
+    newSocket.on('whatsapp_ready', (data) => {
+      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'ready' }));
+      setShowQRCode(false);
+      setQrCodeData('');
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+      addNotification('success', 'WhatsApp account is now ready');
+    });
+
+    newSocket.on('whatsapp_disconnected', (data) => {
+      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'disconnected' }));
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+      addNotification('error', 'WhatsApp account disconnected');
+    });
+
+    newSocket.on('whatsapp_connection_error', (data) => {
+      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'failed' }));
+      addNotification('error', `Connection failed: ${data.error}`);
+    });
+
+    // Campaign events
+    newSocket.on('campaign_progress', (data) => {
+      setSendingProgress(data);
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+    });
+
+    newSocket.on('campaign_completed', (data) => {
+      setSendingProgress(null);
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'analytics'] });
+      addNotification('success', `Campaign completed! Sent: ${data.progress.sent}`);
     });
 
     return () => {
-      console.log('Cleaning up socket connection');
-      newSocket.close();
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
     };
   }, [user?.id, queryClient]);
 
-  // Update your handleConnectAccount function
-  const handleConnectAccount = () => {
-    const accountName = `WhatsApp Account ${(accounts?.data?.length || 0) + 1}`;
-    console.log('Connecting account:', accountName);
-    
-    // Reset QR code state before connecting
-    setQrCodeData('');
-    setShowQRCode(false);
-    
-    connectAccountMutation.mutate({ accountName });
-  };
-
-  // Add a function to close QR modal
-  const closeQRModal = () => {
-    setShowQRCode(false);
-    setQrCodeData('');
-  };
-
-  // Add this to check if we should show QR modal
-  const shouldShowQRModal = showQRCode && qrCodeData && !Object.values(connectionStatus).includes('ready'); 
-
   // Fetch WhatsApp accounts
-  const { data: accounts, isLoading: accountsLoading } = useQuery({
+  const { data: accounts, isLoading: accountsLoading, error: accountsError } = useQuery({
     queryKey: ['whatsapp-accounts'],
     queryFn: async () => {
-      const response = await fetch('https://papakha.in/api/whatsapp/accounts', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/accounts`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!response.ok) throw new Error('Failed to fetch accounts');
       return response.json();
-    }
-  });
-
-  // Fetch contact lists
-  const { data: contactLists, isLoading: contactsLoading } = useQuery({
-    queryKey: ['whatsapp-contact-lists'],
-    queryFn: async () => {
-      const response = await fetch('https://papakha.in/api/whatsapp-web/contacts/lists', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      return response.json();
-    }
+    },
+    refetchInterval: 30000
   });
 
   // Fetch campaigns
   const { data: campaigns, isLoading: campaignsLoading } = useQuery({
-    queryKey: ['whatsapp-campaigns'],
+    queryKey: ['campaigns'],
     queryFn: async () => {
-      const response = await fetch('https://papakha.in/api/whatsapp/campaigns', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/campaigns`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!response.ok) throw new Error('Failed to fetch campaigns');
       return response.json();
-    }
+    },
+    refetchInterval: 30000
   });
 
   // Fetch analytics
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
-    queryKey: ['whatsapp-analytics'],
+    queryKey: ['analytics'],
     queryFn: async () => {
-      const response = await fetch('https://papakha.in/api/whatsapp-web/analytics', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/analytics`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!response.ok) throw new Error('Failed to fetch analytics');
       return response.json();
-    }
+    },
+    refetchInterval: 60000
   });
 
-  // Connect WhatsApp account mutation
+  // Connect account mutation
   const connectAccountMutation = useMutation({
-    mutationFn: async (accountData: any) => {
-      const response = await fetch('https://papakha.in/api/whatsapp-web/connect', {
+    mutationFn: async (accountName) => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/connect`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(accountData)
+        body: JSON.stringify({ accountName })
       });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to connect account');
+      }
+      
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+      addNotification('info', 'Connecting WhatsApp account...');
+    },
+    onError: (error) => {
+      addNotification('error', error.message);
+    }
+  });
+
+  // Disconnect account mutation
+  const disconnectAccountMutation = useMutation({
+    mutationFn: async (accountId) => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/disconnect/${accountId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to disconnect account');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+      addNotification('success', 'Account disconnected successfully');
+    },
+    onError: (error) => {
+      addNotification('error', error.message);
+    }
+  });
+
+  // Delete account mutation
+  const deleteAccountMutation = useMutation({
+    mutationFn: async (accountId) => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/accounts/${accountId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to delete account');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+      addNotification('success', 'Account deleted successfully');
+    },
+    onError: (error) => {
+      addNotification('error', error.message);
     }
   });
 
   // Send message mutation
   const sendMessageMutation = useMutation({
-    mutationFn: async (messageData: any) => {
-      const formData = new FormData();
-      formData.append('accountId', messageData.accountId);
-      formData.append('recipients', JSON.stringify(messageData.recipients));
-      formData.append('content', JSON.stringify(messageData.content));
-      
-      if (mediaFile) {
-        formData.append('media', mediaFile);
-      }
-
-      const response = await fetch('https://papakha.in/api/whatsapp-web/send', {
+    mutationFn: async (formData) => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/send`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
         body: formData
       });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to send message');
+      }
+      
       return response.json();
     },
     onSuccess: () => {
       setMessageContent('');
-      setSelectedContacts([]);
+      setRecipients('');
       setMediaFile(null);
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-campaigns'] });
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-messages'] });
-    }
-  });
-
-  // Import contacts mutation
-  const importContactsMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const formData = new FormData();
-      formData.append('csvFile', data.file);
-      formData.append('listName', data.listName);
-      formData.append('listDescription', data.listDescription);
-
-      const response = await fetch('https://papakha.in/api/whatsapp-web/contacts/import', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`
-        },
-        body: formData
-      });
-      return response.json();
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      addNotification('success', 'Message campaign started successfully');
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-contact-lists'] });
-      setShowContactImport(false);
+    onError: (error) => {
+      addNotification('error', error.message);
     }
   });
 
-  const handleSendMessage = () => {
-    if (!selectedAccount || selectedContacts.length === 0) return;
-    
-    // For text messages, content is required
-    if (messageType === 'text' && !messageContent.trim()) return;
-    
-    // For media messages, file is required, but caption is optional
-    if (messageType !== 'text' && !mediaFile) return;
-
-    sendMessageMutation.mutate({
-      accountId: selectedAccount._id,
-      recipients: selectedContacts,
-      content: {
-        type: messageType,
-        text: messageContent.trim() || '' // Ensure we always send a string, even if empty
-      }
-    });
+  // Event handlers
+  const handleConnectAccount = () => {
+    const accountName = `WhatsApp Account ${(accounts?.data?.length || 0) + 1}`;
+    connectAccountMutation.mutate(accountName);
   };
 
-  const getStatusIcon = (status: string) => {
-    const currentStatus = connectionStatus[status] || status;
+  const handleDisconnectAccount = (accountId) => {
+    if (window.confirm('Are you sure you want to disconnect this account?')) {
+      setConnectionStatus(prev => ({ ...prev, [accountId]: 'disconnected' }));
+      disconnectAccountMutation.mutate(accountId);
+    }
+  };
+
+  const handleDeleteAccount = (accountId) => {
+    if (window.confirm('Are you sure you want to permanently delete this account? This will also delete all related campaigns and messages.')) {
+      setConnectionStatus(prev => {
+        const updated = { ...prev };
+        delete updated[accountId];
+        return updated;
+      });
+      deleteAccountMutation.mutate(accountId);
+    }
+  };
+
+  const handleSendMessage = () => {
+    if (!selectedAccount || !recipients.trim()) return;
+    if (messageType === 'text' && !messageContent.trim()) return;
+    if (messageType !== 'text' && !mediaFile) return;
+
+    const recipientList = recipients
+      .split(/[\n,]/)
+      .map(p => p.trim())
+      .filter(p => p);
+
+    const formData = new FormData();
+    formData.append('accountId', selectedAccount._id);
+    formData.append('recipients', JSON.stringify(recipientList));
+    formData.append('content', JSON.stringify({
+      type: messageType,
+      text: messageContent.trim() || ''
+    }));
+
+    if (mediaFile) {
+      formData.append('media', mediaFile);
+    }
+
+    sendMessageMutation.mutate(formData);
+  };
+
+  const closeQRModal = () => {
+    setShowQRCode(false);
+    setQrCodeData('');
+    
+    setConnectionStatus(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(accountId => {
+        if (updated[accountId] === 'connecting') {
+          updated[accountId] = 'disconnected';
+        }
+      });
+      return updated;
+    });
+    
+    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+  };
+
+  // Status helpers
+  const getStatusIcon = (account) => {
+    const currentStatus = connectionStatus[account._id] || account.status;
+    
     switch (currentStatus) {
       case 'ready':
         return <CheckCircle className="text-green-500" size={16} />;
@@ -326,14 +345,16 @@ const WhatsAppSender: React.FC = () => {
       case 'authenticated':
         return <RefreshCw className="text-blue-500 animate-spin" size={16} />;
       case 'disconnected':
+      case 'failed':
         return <XCircle className="text-red-500" size={16} />;
       default:
         return <AlertTriangle className="text-yellow-500" size={16} />;
     }
   };
 
-  const getStatusColor = (status: string) => {
-    const currentStatus = connectionStatus[status] || status;
+  const getStatusColor = (account) => {
+    const currentStatus = connectionStatus[account._id] || account.status;
+    
     switch (currentStatus) {
       case 'ready':
         return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400';
@@ -341,24 +362,68 @@ const WhatsAppSender: React.FC = () => {
       case 'authenticated':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400';
       case 'disconnected':
+      case 'failed':
         return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
       default:
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400';
     }
   };
 
+  const getStatusText = (account) => {
+    const currentStatus = connectionStatus[account._id] || account.status;
+    
+    switch (currentStatus) {
+      case 'ready': return 'Ready';
+      case 'connecting': return 'Connecting...';
+      case 'authenticated': return 'Authenticating...';
+      case 'disconnected': return 'Disconnected';
+      case 'failed': return 'Failed';
+      default: return 'Unknown';
+    }
+  };
+
+  const recipientList = recipients
+    .split(/[\n,]/)
+    .map(p => p.trim())
+    .filter(p => p);
+
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
   return (
     <div className="space-y-6">
+      {/* Notifications */}
+      <AnimatePresence>
+        {notifications.map((notification) => (
+          <motion.div
+            key={notification.id}
+            initial={{ opacity: 0, y: -50, x: '100%' }}
+            animate={{ opacity: 1, y: 0, x: 0 }}
+            exit={{ opacity: 0, x: '100%' }}
+            className={`fixed top-4 right-4 z-50 p-4 rounded-xl shadow-lg border max-w-sm ${
+              notification.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
+              notification.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+              'bg-blue-50 border-blue-200 text-blue-800'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              {notification.type === 'success' && <CheckCircle size={16} />}
+              {notification.type === 'error' && <XCircle size={16} />}
+              {notification.type === 'info' && <AlertTriangle size={16} />}
+              <span className="text-sm font-medium">{notification.message}</span>
+            </div>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+
+      {/* Header */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="text-3xl font-bold font-display text-gray-900 dark:text-white">WhatsApp Bulk Sender</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Send bulk WhatsApp messages with advanced analytics and anti-blocking features.</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">WhatsApp Bulk Sender</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Send bulk WhatsApp messages with analytics.</p>
         </div>
         <div className="flex items-center space-x-3">
           <button 
@@ -371,7 +436,7 @@ const WhatsAppSender: React.FC = () => {
           <button 
             onClick={handleConnectAccount}
             disabled={connectAccountMutation.isPending}
-            className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-2 rounded-xl hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-lg disabled:opacity-50"
+            className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-2 rounded-xl hover:from-green-700 hover:to-green-800 transition-all shadow-lg disabled:opacity-50"
           >
             <Plus className="inline mr-2" size={16} />
             {connectAccountMutation.isPending ? 'Connecting...' : 'Connect Account'}
@@ -394,29 +459,29 @@ const WhatsAppSender: React.FC = () => {
                 {
                   title: 'Total Messages',
                   value: analytics?.data?.overview?.totalMessages?.toLocaleString() || '0',
-                  change: '+12%',
+                  change: analytics?.data?.overview?.messageGrowth || '+0%',
                   icon: <MessageSquare className="text-blue-500" size={24} />,
                   color: 'blue'
                 },
                 {
                   title: 'Delivery Rate',
-                  value: `${analytics?.data?.overview?.deliveryRate || 0}%`,
-                  change: '+5.2%',
+                  value: `${analytics?.data?.overview?.deliveryRate?.toFixed(1) || '0.0'}%`,
+                  change: analytics?.data?.overview?.deliveryGrowth || '+0%',
                   icon: <TrendingUp className="text-green-500" size={24} />,
                   color: 'green'
                 },
                 {
                   title: 'Read Rate',
-                  value: `${analytics?.data?.overview?.readRate || 0}%`,
-                  change: '+3.1%',
+                  value: `${analytics?.data?.overview?.readRate?.toFixed(1) || '0.0'}%`,
+                  change: analytics?.data?.overview?.readGrowth || '+0%',
                   icon: <Eye className="text-purple-500" size={24} />,
                   color: 'purple'
                 },
                 {
-                  title: 'Click Rate',
-                  value: `${analytics?.data?.overview?.clickRate || 0}%`,
-                  change: '+1.8%',
-                  icon: <MousePointer className="text-orange-500" size={24} />,
+                  title: 'Active Accounts',
+                  value: accounts?.data?.filter(acc => acc.status === 'ready').length || 0,
+                  change: '+0%',
+                  icon: <Users className="text-orange-500" size={24} />,
                   color: 'orange'
                 }
               ].map((stat, index) => (
@@ -430,14 +495,16 @@ const WhatsAppSender: React.FC = () => {
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{stat.title}</p>
-                      <p className="text-2xl font-bold font-display text-gray-900 dark:text-white mt-1">{stat.value}</p>
+                      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stat.value}</p>
                     </div>
                     <div className="flex-shrink-0">
                       {stat.icon}
                     </div>
                   </div>
                   <div className="flex items-center">
-                    <span className="text-sm font-medium text-green-600">{stat.change}</span>
+                    <span className={`text-sm font-medium ${stat.change.startsWith('+') ? 'text-green-600' : 'text-red-600'}`}>
+                      {stat.change}
+                    </span>
                     <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">vs last period</span>
                   </div>
                 </motion.div>
@@ -448,12 +515,12 @@ const WhatsAppSender: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Message Performance Chart */}
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                <h3 className="text-lg font-semibold font-display text-gray-900 dark:text-white mb-6">Message Performance</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Message Performance</h3>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={analytics?.data?.dailyStats || []}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
-                      <XAxis dataKey="_id.day" stroke="#6B7280" />
+                      <XAxis dataKey="date" stroke="#6B7280" />
                       <YAxis stroke="#6B7280" />
                       <Tooltip 
                         contentStyle={{ 
@@ -474,7 +541,7 @@ const WhatsAppSender: React.FC = () => {
 
               {/* Message Types Distribution */}
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                <h3 className="text-lg font-semibold font-display text-gray-900 dark:text-white mb-6">Message Types</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Message Types</h3>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -487,7 +554,7 @@ const WhatsAppSender: React.FC = () => {
                         paddingAngle={5}
                         dataKey="count"
                       >
-                        {(analytics?.data?.messageTypes || []).map((entry: any, index: number) => (
+                        {(analytics?.data?.messageTypes || []).map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
@@ -508,11 +575,42 @@ const WhatsAppSender: React.FC = () => {
         transition={{ delay: 0.1 }}
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
       >
-        <h3 className="text-lg font-semibold font-display text-gray-900 dark:text-white mb-6">Connected WhatsApp Accounts</h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Connected WhatsApp Accounts</h3>
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1 text-sm text-gray-500">
+              {socket?.connected ? (
+                <>
+                  <Wifi className="text-green-500" size={14} />
+                  <span>Connected</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="text-red-500" size={14} />
+                  <span>Disconnected</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
         
         {accountsLoading ? (
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
+            <p className="text-gray-500 mt-2">Loading accounts...</p>
+          </div>
+        ) : accountsError ? (
+          <div className="text-center py-8">
+            <XCircle className="text-red-500 mx-auto mb-4" size={48} />
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Failed to Load Accounts</h4>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">{accountsError.message}</p>
+            <button 
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] })}
+              className="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-colors"
+            >
+              <RefreshCw className="inline mr-2" size={16} />
+              Retry
+            </button>
           </div>
         ) : accounts?.data?.length === 0 ? (
           <div className="text-center py-12">
@@ -521,44 +619,116 @@ const WhatsAppSender: React.FC = () => {
             <p className="text-gray-600 dark:text-gray-400 mb-6">Connect your first WhatsApp account to start sending bulk messages.</p>
             <button 
               onClick={handleConnectAccount}
-              className="bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700 transition-colors"
+              disabled={connectAccountMutation.isPending}
+              className="bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
             >
               <QrCode className="inline mr-2" size={16} />
-              Connect WhatsApp Account
+              {connectAccountMutation.isPending ? 'Connecting...' : 'Connect WhatsApp Account'}
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {accounts?.data?.map((account: any) => (
+            {accounts?.data?.map((account) => (
               <div
                 key={account._id}
-                onClick={() => setSelectedAccount(account)}
-                className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                className={`p-4 border-2 rounded-xl transition-all cursor-pointer ${
                   selectedAccount?._id === account._id
                     ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
                     : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
                 }`}
+                onClick={() => account.status === 'ready' && setSelectedAccount(account)}
               >
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="font-semibold text-gray-900 dark:text-white">{account.accountName}</h4>
-                  {getStatusIcon(account._id)}
+                  <div className="flex items-center space-x-2">
+                    {getStatusIcon(account)}
+                    <div className="flex space-x-1">
+                      {/* Reconnect button for disconnected/failed accounts */}
+                      {['disconnected', 'failed'].includes(connectionStatus[account._id] || account.status) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            connectAccountMutation.mutate(account.accountName);
+                          }}
+                          disabled={connectAccountMutation.isPending}
+                          className="p-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors disabled:opacity-50"
+                          title="Reconnect"
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                      )}
+                      
+                      {/* Disconnect button for ready/authenticated accounts */}
+                      {['ready', 'authenticated'].includes(connectionStatus[account._id] || account.status) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDisconnectAccount(account._id);
+                          }}
+                          disabled={disconnectAccountMutation.isPending}
+                          className="p-1 text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded transition-colors disabled:opacity-50"
+                          title="Disconnect"
+                        >
+                          <Power size={14} />
+                        </button>
+                      )}
+                      
+                      {/* Delete button */}
+                      {!['connecting', 'authenticated'].includes(connectionStatus[account._id] || account.status) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteAccount(account._id);
+                          }}
+                          className="p-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                          title="Delete Account"
+                        >
+                          <XCircle size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
+                
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600 dark:text-gray-400">Phone:</span>
-                    <span className="text-gray-900 dark:text-white">{account.phoneNumber || 'Not connected'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">Status:</span>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(account._id)}`}>
-                      {connectionStatus[account._id] || account.status}
+                    <span className="text-gray-900 dark:text-white">
+                      {account.phoneNumber || 'Not connected'}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">Messages Today:</span>
-                    <span className="text-gray-900 dark:text-white">{account.dailyMessageCount || 0}/{account.dailyLimit || 1000}</span>
+                    <span className="text-gray-600 dark:text-gray-400">Status:</span>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(account)}`}>
+                      {getStatusText(account)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400">Last Activity:</span>
+                    <span className="text-gray-900 dark:text-white">
+                      {account.lastActivity ? new Date(account.lastActivity).toLocaleDateString() : 'Never'}
+                    </span>
                   </div>
                 </div>
+
+                {selectedAccount?._id === account._id && (
+                  <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-green-600 dark:text-green-400 font-medium">
+                        ✓ Selected for messaging
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedAccount(null);
+                        }}
+                        className="text-gray-500 hover:text-gray-700"
+                      >
+                        Deselect
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -566,7 +736,7 @@ const WhatsAppSender: React.FC = () => {
       </motion.div>
 
       {/* Message Composer */}
-      {selectedAccount && (connectionStatus[selectedAccount._id] === 'ready' || selectedAccount.status === 'ready') && (
+      {selectedAccount && selectedAccount.status === 'ready' && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -574,25 +744,24 @@ const WhatsAppSender: React.FC = () => {
           className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
         >
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold font-display text-gray-900 dark:text-white">Compose Message</h3>
-            <button
-              onClick={() => setShowContactImport(true)}
-              className="flex items-center space-x-2 px-4 py-2 text-blue-600 bg-blue-50 dark:bg-blue-900/20 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
-            >
-              <Upload size={16} />
-              <span>Import Contacts</span>
-            </button>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Compose Message</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Using account: {selectedAccount.accountName} ({selectedAccount.phoneNumber})
+              </p>
+            </div>
           </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Message Type Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Message Type</label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
                   { type: 'text', icon: MessageSquare, label: 'Text' },
                   { type: 'image', icon: Image, label: 'Image' },
-                  { type: 'video', icon: Video, label: 'Video' }
+                  { type: 'video', icon: Video, label: 'Video' },
+                  { type: 'document', icon: FileText, label: 'Document' }
                 ].map(({ type, icon: Icon, label }) => (
                   <button
                     key={type}
@@ -612,21 +781,21 @@ const WhatsAppSender: React.FC = () => {
               </div>
             </div>
 
-            {/* Contact Selection */}
+            {/* Recipients */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Recipients</label>
               <div className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Enter phone numbers (comma separated)"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  onChange={(e) => {
-                    const phones = e.target.value.split(',').map(p => p.trim()).filter(p => p);
-                    setSelectedContacts(phones);
-                  }}
+                <textarea
+                  value={recipients}
+                  onChange={(e) => setRecipients(e.target.value)}
+                  placeholder="Enter phone numbers (one per line or comma separated)&#10;+1234567890&#10;+0987654321"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                  rows={4}
                 />
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  {selectedContacts.length} recipient{selectedContacts.length !== 1 ? 's' : ''} selected
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600 dark:text-gray-400">
+                    {recipientList.length} recipient{recipientList.length !== 1 ? 's' : ''} selected
+                  </span>
                 </div>
               </div>
             </div>
@@ -642,7 +811,8 @@ const WhatsAppSender: React.FC = () => {
                   onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
                   accept={
                     messageType === 'image' ? 'image/*' :
-                    messageType === 'video' ? 'video/*' : '*'
+                    messageType === 'video' ? 'video/*' :
+                    messageType === 'document' ? '.pdf,.doc,.docx,.txt' : '*'
                   }
                   className="hidden"
                   id="media-upload"
@@ -650,10 +820,18 @@ const WhatsAppSender: React.FC = () => {
                 <div className="cursor-pointer" onClick={() => document.getElementById('media-upload')?.click()}>
                   <Upload className="mx-auto text-gray-400 mb-3" size={32} />
                   <p className="text-gray-600 dark:text-gray-400 mb-2">
-                    {mediaFile ? mediaFile.name : `Upload ${messageType} file`}
+                    {mediaFile ? (
+                      <>
+                        <span className="font-medium">{mediaFile.name}</span>
+                        <br />
+                        <span className="text-sm">({(mediaFile.size / 1024 / 1024).toFixed(2)} MB)</span>
+                      </>
+                    ) : (
+                      `Upload ${messageType} file`
+                    )}
                   </p>
                   <div className="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-colors inline-block">
-                    Choose File
+                    {mediaFile ? 'Change File' : 'Choose File'}
                   </div>
                 </div>
               </div>
@@ -675,60 +853,40 @@ const WhatsAppSender: React.FC = () => {
                   ? "Type your message here..." 
                   : "Add a caption to your media (optional)..."
               }
-              required={messageType === 'text'}
             />
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {messageType === 'text' 
-                ? `Message length: ${messageContent.length} characters` 
-                : `Caption length: ${messageContent.length} characters`
-              }
-            </p>
-          </div>
-
-          {/* Anti-Blocking Settings */}
-          <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
-            <div className="flex items-center space-x-3 mb-3">
-              <Shield className="text-blue-600" size={20} />
-              <h4 className="font-semibold text-blue-800 dark:text-blue-400">Anti-Blocking Features</h4>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="flex items-center space-x-2">
-                <Zap className="text-blue-600" size={16} />
-                <span className="text-blue-700 dark:text-blue-300">3-5 second delays</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Clock className="text-blue-600" size={16} />
-                <span className="text-blue-700 dark:text-blue-300">Number validation</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <BarChart3 className="text-blue-600" size={16} />
-                <span className="text-blue-700 dark:text-blue-300">Batch processing</span>
-              </div>
-            </div>
-            <div className="mt-3 text-xs text-blue-600 dark:text-blue-400">
-              ⚠️ Messages are sent with delays to prevent blocking. Large campaigns may take time to complete.
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Character count: {messageContent.length}
+              </p>
             </div>
           </div>
 
           {/* Send Button */}
           <div className="mt-6 flex items-center justify-between">
             <div className="text-sm text-gray-600 dark:text-gray-400">
-              {selectedContacts.length} contact{selectedContacts.length !== 1 ? 's' : ''} selected
-              {selectedContacts.length > 50 && (
-                <span className="block text-yellow-600 dark:text-yellow-400">
-                  Large campaigns will be processed in batches
-                </span>
+              <div>
+                {recipientList.length} contact{recipientList.length !== 1 ? 's' : ''} selected
+              </div>
+              {recipientList.length > 0 && (
+                <div className="text-xs mt-1">
+                  Estimated time: ~{Math.ceil(recipientList.length * 3)} seconds
+                </div>
               )}
             </div>
             <button
               onClick={handleSendMessage}
-              disabled={!isFormValid() || sendMessageMutation.isPending}
+              disabled={
+                !recipientList.length || 
+                (messageType === 'text' && !messageContent.trim()) ||
+                (messageType !== 'text' && !mediaFile) ||
+                sendMessageMutation.isPending
+              }
               className="flex items-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {sendMessageMutation.isPending ? (
                 <>
                   <RefreshCw className="animate-spin" size={16} />
-                  <span>Sending...</span>
+                  <span>Starting Campaign...</span>
                 </>
               ) : (
                 <>
@@ -741,41 +899,43 @@ const WhatsAppSender: React.FC = () => {
           
           {/* Sending Progress */}
           {sendingProgress && (
-            <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4"
+            >
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-semibold text-blue-800 dark:text-blue-400">Sending Progress</h4>
                 <span className="text-sm text-blue-600 dark:text-blue-400">
-                  {sendingProgress.progress.sent + sendingProgress.progress.failed}/{sendingProgress.progress.total}
+                  {sendingProgress.progress?.sent || 0}/{sendingProgress.progress?.total || 0}
                 </span>
               </div>
-              <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-3">
+              
+              <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-3 mb-4">
                 <div 
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  className="bg-blue-600 h-3 rounded-full transition-all duration-300"
                   style={{ 
-                    width: `${((sendingProgress.progress.sent + sendingProgress.progress.failed) / sendingProgress.progress.total) * 100}%` 
+                    width: `${sendingProgress.progress?.total > 0 ? 
+                      ((sendingProgress.progress.sent || 0) / sendingProgress.progress.total) * 100 : 0}%` 
                   }}
-                ></div>
+                />
               </div>
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div className="text-center">
-                  <div className="text-lg font-bold text-green-600">{sendingProgress.progress.sent}</div>
+              
+              <div className="grid grid-cols-3 gap-4 text-sm text-center">
+                <div>
+                  <div className="text-lg font-bold text-green-600">{sendingProgress.progress?.sent || 0}</div>
                   <div className="text-gray-600 dark:text-gray-400">Sent</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-lg font-bold text-red-600">{sendingProgress.progress.failed}</div>
+                <div>
+                  <div className="text-lg font-bold text-red-600">{sendingProgress.progress?.failed || 0}</div>
                   <div className="text-gray-600 dark:text-gray-400">Failed</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-lg font-bold text-blue-600">{sendingProgress.progress.pending}</div>
+                <div>
+                  <div className="text-lg font-bold text-gray-600">{sendingProgress.progress?.pending || 0}</div>
                   <div className="text-gray-600 dark:text-gray-400">Pending</div>
                 </div>
               </div>
-              {sendingProgress.messageUpdate && (
-                <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-                  Last: {sendingProgress.messageUpdate.recipient} - {sendingProgress.messageUpdate.status}
-                </div>
-              )}
-            </div>
+            </motion.div>
           )}
         </motion.div>
       )}
@@ -788,16 +948,20 @@ const WhatsAppSender: React.FC = () => {
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
       >
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold font-display text-gray-900 dark:text-white">Recent Campaigns</h3>
-          <button className="flex items-center space-x-2 px-4 py-2 text-green-600 bg-green-50 dark:bg-green-900/20 rounded-xl hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors">
-            <Download size={16} />
-            <span>Export Data</span>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Campaigns</h3>
+          <button 
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['campaigns'] })}
+            className="flex items-center space-x-2 px-3 py-2 text-gray-600 bg-gray-50 dark:bg-gray-700 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+          >
+            <RefreshCw size={14} />
+            <span>Refresh</span>
           </button>
         </div>
         
         {campaignsLoading ? (
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
+            <p className="text-gray-500 mt-2">Loading campaigns...</p>
           </div>
         ) : campaigns?.data?.length === 0 ? (
           <div className="text-center py-8">
@@ -810,42 +974,76 @@ const WhatsAppSender: React.FC = () => {
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700">
                   <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Campaign</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Type</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Recipients</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Status</th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Delivery Rate</th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Read Rate</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Progress</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Created</th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {campaigns?.data?.map((campaign: any) => (
+                {campaigns?.data?.map((campaign) => (
                   <tr key={campaign._id} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                     <td className="py-4 px-4">
                       <div className="font-medium text-gray-900 dark:text-white">{campaign.name}</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">{campaign.description}</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 truncate max-w-xs">
+                        {campaign.messageContent?.content?.substring(0, 50)}
+                        {campaign.messageContent?.content?.length > 50 ? '...' : ''}
+                      </div>
                     </td>
-                    <td className="py-4 px-4 text-gray-600 dark:text-gray-400">{campaign.progress?.total || 0}</td>
                     <td className="py-4 px-4">
-                      <span className={`px-3 py-1 text-xs font-medium rounded-full ${getStatusColor(campaign.status)}`}>
+                      <div className="flex items-center space-x-1">
+                        {campaign.messageContent?.type === 'text' && <MessageSquare className="text-gray-500" size={16} />}
+                        {campaign.messageContent?.type === 'image' && <Image className="text-blue-500" size={16} />}
+                        {campaign.messageContent?.type === 'video' && <Video className="text-purple-500" size={16} />}
+                        {campaign.messageContent?.type === 'document' && <FileText className="text-green-500" size={16} />}
+                        <span className="text-sm capitalize text-gray-600 dark:text-gray-400">
+                          {campaign.messageContent?.type || 'text'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-gray-600 dark:text-gray-400">
+                      {campaign.progress?.total || 0}
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+                        campaign.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
+                        campaign.status === 'running' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' :
+                        campaign.status === 'paused' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
+                        campaign.status === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
+                        'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'
+                      }`}>
                         {campaign.status}
                       </span>
                     </td>
-                    <td className="py-4 px-4 text-gray-600 dark:text-gray-400">{campaign.analytics?.deliveryRate?.toFixed(1) || 0}%</td>
-                    <td className="py-4 px-4 text-gray-600 dark:text-gray-400">{campaign.analytics?.readRate?.toFixed(1) || 0}%</td>
-                    <td className="py-4 px-4 text-gray-600 dark:text-gray-400">
-                      {new Date(campaign.createdAt).toLocaleDateString()}
-                    </td>
                     <td className="py-4 px-4">
-                      <div className="flex space-x-2">
-                        <button className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors">
-                          <Eye size={14} />
-                        </button>
-                        {campaign.status === 'running' && (
-                          <button className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
-                            <Pause size={14} />
-                          </button>
-                        )}
+                      <div className="flex items-center space-x-2">
+                        <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div 
+                            className={`h-2 rounded-full transition-all ${
+                              campaign.status === 'completed' ? 'bg-green-500' :
+                              campaign.status === 'running' ? 'bg-blue-500' :
+                              campaign.status === 'failed' ? 'bg-red-500' :
+                              'bg-gray-400'
+                            }`}
+                            style={{ 
+                              width: `${campaign.progress?.total > 0 ? 
+                                ((campaign.progress.sent + campaign.progress.failed) / campaign.progress.total) * 100 : 0}%` 
+                            }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 w-12">
+                          {campaign.progress?.total > 0 ? 
+                            Math.round(((campaign.progress.sent + campaign.progress.failed) / campaign.progress.total) * 100) : 0}%
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-gray-600 dark:text-gray-400">
+                      <div className="text-sm">
+                        {new Date(campaign.createdAt).toLocaleDateString()}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(campaign.createdAt).toLocaleTimeString()}
                       </div>
                     </td>
                   </tr>
@@ -857,97 +1055,66 @@ const WhatsAppSender: React.FC = () => {
       </motion.div>
 
       {/* QR Code Modal */}
-      {showQRCode && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 max-w-md w-full"
-          >
-            <div className="text-center">
-              <QrCode className="text-green-600 mx-auto mb-4" size={48} />
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Scan QR Code</h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Open WhatsApp on your phone and scan this QR code to connect your account.
-              </p>
-              
-              {/* QR Code Display */}
-              <div className="w-64 h-64 bg-gray-100 dark:bg-gray-700 rounded-xl flex items-center justify-center mx-auto mb-6">
-                {qrCodeData ? (
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(qrCodeData)}`}
-                    alt="WhatsApp QR Code"
-                    className="w-full h-full object-contain rounded-xl"
-                  />
-                ) : (
-                  <QrCode className="text-gray-400" size={64} />
-                )}
+      <AnimatePresence>
+        {showQRCode && qrCodeData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 max-w-md w-full"
+            >
+              <div className="text-center">
+                <QrCode className="text-green-600 mx-auto mb-4" size={48} />
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Scan QR Code</h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device, and scan this QR code.
+                </p>
+                
+                {/* QR Code Display */}
+                <div className="w-64 h-64 bg-gray-100 dark:bg-gray-700 rounded-xl flex items-center justify-center mx-auto mb-6">
+                  {qrCodeData ? (
+                    <img 
+                      src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`}
+                      alt="WhatsApp QR Code"
+                      className="w-full h-full object-contain rounded-xl"
+                    />
+                  ) : (
+                    <div className="text-center">
+                      <RefreshCw className="text-gray-400 animate-spin mx-auto mb-2" size={32} />
+                      <p className="text-gray-500">Generating QR code...</p>
+                    </div>
+                  )}
+                </div>                
+                
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 mb-6">
+                  <div className="flex items-center space-x-2 text-blue-800 dark:text-blue-400">
+                    <AlertTriangle size={16} />
+                    <p className="text-sm">
+                      QR code expires in 20 seconds. If it expires, please try connecting again.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex space-x-3">
+                  <button
+                    onClick={closeQRModal}
+                    className="flex-1 px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={closeQRModal}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
-              
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => setShowQRCode(false)}
-                  className="flex-1 px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => setShowQRCode(false)}
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Contact Import Modal */}
-      {showContactImport && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 max-w-md w-full"
-          >
-            <div className="text-center">
-              <Upload className="text-blue-600 mx-auto mb-4" size={48} />
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Import Contacts</h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Upload a CSV file with phone numbers and contact information.
-              </p>
-              
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  placeholder="Contact list name"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <input
-                  type="file"
-                  accept=".csv"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              
-              <div className="flex space-x-3 mt-6">
-                <button
-                  onClick={() => setShowContactImport(false)}
-                  className="flex-1 px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
-                >
-                  Import
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

@@ -55,7 +55,7 @@ const AdminDashboard: React.FC = () => {
       const params = new URLSearchParams();
       if (userFilter !== 'all') params.append('planStatus', userFilter);
       
-      const response = await fetch(`http://localhost:5000/api/admin/users?${params}`, {
+      const response = await fetch(`https://papakha.in/api/admin/users?${params}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -66,7 +66,7 @@ const AdminDashboard: React.FC = () => {
   const { data: analyticsData } = useQuery({
     queryKey: ['admin-analytics', timeRange],
     queryFn: async () => {
-      const response = await fetch(`http://localhost:5000/api/admin/analytics?timeRange=${timeRange}`, {
+      const response = await fetch(`https://papakha.in/api/admin/analytics?timeRange=${timeRange}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
