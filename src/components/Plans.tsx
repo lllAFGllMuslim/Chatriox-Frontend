@@ -91,7 +91,7 @@ const Plans: React.FC = () => {
     queryKey: ['plans'],
     queryFn: async () => {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/plans`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/subscription/plans`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -110,7 +110,7 @@ const Plans: React.FC = () => {
     queryKey: ['trial-status'],
     queryFn: async () => {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/trial-status`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/subscription/trial-status`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -193,7 +193,7 @@ const Plans: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/calculate-upgrade`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/subscription/calculate-upgrade`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -274,7 +274,7 @@ const Plans: React.FC = () => {
       localStorage.setItem('selectedPlanId', planId);
       localStorage.setItem('selectedBillingCycle', billingCycle);
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/create-order`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/subscription/create-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

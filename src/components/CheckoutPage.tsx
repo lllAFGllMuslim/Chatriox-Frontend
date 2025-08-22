@@ -86,7 +86,7 @@ const CheckoutPage: React.FC = () => {
     
     try {
       // Create payment order
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/payments/create-order`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/payments/create-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

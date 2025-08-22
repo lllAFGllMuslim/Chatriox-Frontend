@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import io from 'socket.io-client';
 
-const API_BASE = 'https://papakha.in';
+const API_BASE = 'https://chatriox.com';
 
 const WhatsAppSender = () => {
   const { user } = useAuth();

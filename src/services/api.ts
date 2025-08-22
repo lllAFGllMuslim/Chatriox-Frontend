@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://papakha.in/api';
+const API_BASE_URL = 'https://chatriox.com/api';
 
 // Helper function to get auth headers
 const getAuthHeaders = () => ({

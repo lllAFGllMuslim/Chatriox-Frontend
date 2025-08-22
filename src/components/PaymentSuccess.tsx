@@ -31,7 +31,7 @@ const PaymentSuccess: React.FC = () => {
   const verifyPayment = async (orderId: string, planId: string, billingCycle: string) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/subscription/verify-payment`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/subscription/verify-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

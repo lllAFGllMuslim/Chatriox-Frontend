@@ -36,7 +36,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   const { data: contactLists, isLoading } = useQuery({
     queryKey: ['contact-lists'],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/contacts/lists`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -48,7 +48,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   const { data: listDetails, isLoading: listLoading } = useQuery({
     queryKey: ['contact-list', selectedList?._id],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists/${selectedList._id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/contacts/lists/${selectedList._id}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       return response.json();
@@ -59,7 +59,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   // Create contact list mutation
   const createListMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/contacts/lists`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -80,7 +80,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   // Validate contacts mutation
   const validateContactsMutation = useMutation({
     mutationFn: async (listId: string) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists/${listId}/validate`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/contacts/lists/${listId}/validate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -98,7 +98,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ isOpen, onClose }) => {
   // Delete contact list mutation
   const deleteListMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists/${id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/contacts/lists/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
@@ -115,7 +115,7 @@ const importContactsMutation = useMutation({
     const formData = new FormData();
     formData.append('csvFile', file);
     
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in'}/api/contacts/lists/${listId}/import`, {
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com'}/api/contacts/lists/${listId}/import`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${localStorage.getItem('token')}`

@@ -26,7 +26,7 @@ const EmailValidation = () => {
   const resultsPerPage = 10;
 
   // API base URL - adjust this to match your backend
-  const API_BASE_URL = 'https://papakha.in/api';
+  const API_BASE_URL = 'https://chatriox.com/api';
 
   // Fetch stats from backend
   const fetchStats = async () => {

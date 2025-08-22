@@ -44,7 +44,7 @@ const MailScraper: React.FC = () => {
   const queryClient = useQueryClient();
 
   // Get API base URL
-  const getApiUrl = () => import.meta.env.VITE_API_URL || 'https://papakha.in';
+  const getApiUrl = () => import.meta.env.VITE_API_URL || 'https://chatriox.com';
   const getAuthHeaders = () => ({
     'Authorization': `Bearer ${localStorage.getItem('token')}`,
     'Content-Type': 'application/json'
