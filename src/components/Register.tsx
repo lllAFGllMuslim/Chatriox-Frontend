@@ -49,7 +49,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin }) => {
   const handleResendVerification = async () => {
     setIsResending(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://papakha.in/api'}/auth/resend-verification`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://chatriox.com/api'}/auth/resend-verification`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

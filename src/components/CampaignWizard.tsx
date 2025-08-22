@@ -70,7 +70,7 @@ const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
     'Content-Type': 'application/json'
   });
 
-  const getApiUrl = () => import.meta.env.VITE_API_URL || 'https://papakha.in';
+  const getApiUrl = () => import.meta.env.VITE_API_URL || 'https://chatriox.com';
 
   // Fetch SMTP configurations
   const fetchSmtpConfigs = async () => {
