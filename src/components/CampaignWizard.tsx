@@ -183,7 +183,7 @@ const createCampaign = async () => {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden"
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[100vh] overflow-hidden"
       >
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6">
@@ -494,15 +494,15 @@ const createCampaign = async () => {
                       ))}
                     </div>
                     
-                    <div className="text-center pt-6 border-t border-gray-200 dark:border-gray-600">
-                      <button 
-                        onClick={() => setShowContactListForm(true)}
-                        className="flex items-center space-x-2 mx-auto px-4 py-2 text-orange-600 bg-orange-50 dark:bg-orange-900/20 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/30"
-                      >
-                        <Plus size={16} />
-                        <span>Create New Contact List</span>
-                      </button>
-                    </div>
+<div className="text-center pt-6 border-t border-gray-200 dark:border-gray-600">
+  <button 
+    onClick={onOpenContactManager}
+    className="flex items-center space-x-2 mx-auto px-4 py-2 text-orange-600 bg-orange-50 dark:bg-orange-900/20 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/30"
+  >
+    <Plus size={16} />
+    <span>Create New Contact List</span>
+  </button>
+</div>
                   </>
                 )}
               </motion.div>
@@ -661,17 +661,20 @@ const createCampaign = async () => {
 <button
   onClick={handleSubmit}
   disabled={!canProceed || isCreatingCampaign}
-  className="flex items-center ... bg-green-600 text-white rounded-xl ..."
+  className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium transition
+    ${isCreatingCampaign || !canProceed 
+      ? "bg-gray-400 cursor-not-allowed" 
+      : "bg-green-600 hover:bg-green-700 text-white"}`}
 >
   {isCreatingCampaign ? (
     <>
-      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
       <span>Creating...</span>
     </>
   ) : (
     <>
       <Send size={16} />
-      <span>{campaignData.scheduleType === 'now' ? 'Send Now' : 'Schedule Campaign'}</span>
+      <span>{campaignData.scheduleType === "now" ? "Send Now" : "Schedule Campaign"}</span>
     </>
   )}
 </button>

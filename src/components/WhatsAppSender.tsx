@@ -143,22 +143,25 @@ const WhatsAppSender = () => {
       if (!response.ok) throw new Error('Failed to fetch campaigns');
       return response.json();
     },
-    refetchInterval: 30000
+    refetchInterval: 5000
   });
 
   // Fetch analytics
-  const { data: analytics, isLoading: analyticsLoading } = useQuery({
-    queryKey: ['analytics'],
-    queryFn: async () => {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/api/whatsapp-web/analytics`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) throw new Error('Failed to fetch analytics');
-      return response.json();
-    },
-    refetchInterval: 60000
-  });
+  // In your WhatsApp component, replace the analytics query with this:
+
+const { data: analytics, isLoading: analyticsLoading } = useQuery({
+  queryKey: ['analytics'],
+  queryFn: async () => {
+    const token = localStorage.getItem('token');
+    // FIXED: Default to 7 days
+    const response = await fetch(`${API_BASE}/api/whatsapp-web/analytics?timeRange=7d`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to fetch analytics');
+    return response.json();
+  },
+  refetchInterval: 10000
+});
 
   // Connect account mutation
   const connectAccountMutation = useMutation({
@@ -760,8 +763,7 @@ const WhatsAppSender = () => {
                 {[
                   { type: 'text', icon: MessageSquare, label: 'Text' },
                   { type: 'image', icon: Image, label: 'Image' },
-                  { type: 'video', icon: Video, label: 'Video' },
-                  { type: 'document', icon: FileText, label: 'Document' }
+                  { type: 'video', icon: Video, label: 'Video' }
                 ].map(({ type, icon: Icon, label }) => (
                   <button
                     key={type}
@@ -811,8 +813,7 @@ const WhatsAppSender = () => {
                   onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
                   accept={
                     messageType === 'image' ? 'image/*' :
-                    messageType === 'video' ? 'video/*' :
-                    messageType === 'document' ? '.pdf,.doc,.docx,.txt' : '*'
+                    messageType === 'video' ? 'video/*' : '*'
                   }
                   className="hidden"
                   id="media-upload"
@@ -996,7 +997,6 @@ const WhatsAppSender = () => {
                         {campaign.messageContent?.type === 'text' && <MessageSquare className="text-gray-500" size={16} />}
                         {campaign.messageContent?.type === 'image' && <Image className="text-blue-500" size={16} />}
                         {campaign.messageContent?.type === 'video' && <Video className="text-purple-500" size={16} />}
-                        {campaign.messageContent?.type === 'document' && <FileText className="text-green-500" size={16} />}
                         <span className="text-sm capitalize text-gray-600 dark:text-gray-400">
                           {campaign.messageContent?.type || 'text'}
                         </span>

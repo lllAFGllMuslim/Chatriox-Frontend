@@ -130,7 +130,7 @@ const EmailSender: React.FC = () => {
           </div>
         </motion.div>
 
-        {/* Campaign Workflow Guide */}
+{/* Campaign Workflow Guide */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -138,7 +138,7 @@ const EmailSender: React.FC = () => {
           className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
         >
           <h3 className="text-xl font-semibold font-display text-gray-900 dark:text-white mb-6">Campaign Creation Workflow</h3>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0 md:space-x-4">
             {[
               { step: 1, title: 'SMTP Setup', desc: 'Configure email server', required: true },
               { step: 2, title: 'Campaign Details', desc: 'Set subject & sender info', required: true },
@@ -146,21 +146,23 @@ const EmailSender: React.FC = () => {
               { step: 4, title: 'Contact Management', desc: 'Select recipient list', required: true },
               { step: 5, title: 'Review & Send', desc: 'Send now or schedule', required: true }
             ].map((item, index) => (
-              <div key={item.step} className="text-center">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 ${
-                  item.required ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/20' : 'bg-gray-100 text-gray-600 dark:bg-gray-700'
-                }`}>
-                  {item.step}
+              <div key={item.step} className="flex items-center">
+                <div className="text-center">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 ${
+                    item.required ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/20' : 'bg-gray-100 text-gray-600 dark:bg-gray-700'
+                  }`}>
+                    {item.step}
+                  </div>
+                  <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-1">{item.title}</h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">{item.desc}</p>
+                  {item.required && (
+                    <span className="inline-block mt-2 text-xs bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400 px-2 py-1 rounded-full">
+                      Required
+                    </span>
+                  )}
                 </div>
-                <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-1">{item.title}</h4>
-                <p className="text-xs text-gray-600 dark:text-gray-400">{item.desc}</p>
-                {item.required && (
-                  <span className="inline-block mt-2 text-xs bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400 px-2 py-1 rounded-full">
-                    Required
-                  </span>
-                )}
                 {index < 4 && (
-                  <div className="hidden md:block absolute top-6 left-full w-full h-0.5 bg-gray-200 dark:bg-gray-600 transform translate-x-2"></div>
+                  <div className="hidden md:block w-8 h-0.5 bg-gray-200 dark:bg-gray-600 ml-4"></div>
                 )}
               </div>
             ))}
@@ -198,10 +200,11 @@ const EmailSender: React.FC = () => {
       </div>
 
       {/* Modals */}
-      <CampaignWizard 
-        isOpen={showCampaignWizard} 
-        onClose={() => setShowCampaignWizard(false)} 
-      />
+<CampaignWizard 
+  isOpen={showCampaignWizard} 
+  onClose={() => setShowCampaignWizard(false)}
+  onOpenContactManager={() => setShowContactManager(true)}
+/>
       <SMTPManager 
         isOpen={showSMTPManager} 
         onClose={() => setShowSMTPManager(false)} 
