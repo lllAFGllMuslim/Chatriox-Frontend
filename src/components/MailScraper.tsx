@@ -44,7 +44,7 @@ const MailScraper: React.FC = () => {
   const queryClient = useQueryClient();
 
   // Get API base URL
-  const getApiUrl = () => import.meta.env.VITE_API_URL || 'https://chatriox.com';
+  const getApiUrl = () => import.meta.env.VITE_API_URL || 'http://localhost:5000';
   const getAuthHeaders = () => ({
     'Authorization': `Bearer ${localStorage.getItem('token')}`,
     'Content-Type': 'application/json'
@@ -239,76 +239,7 @@ const MailScraper: React.FC = () => {
         </button>
       </motion.div>
 
-      {/* Statistics Dashboard */}
-      {stats?.success && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6"
-        >
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-100 text-sm">Total Jobs</p>
-                <p className="text-2xl font-bold">{stats.stats.totalJobs || 0}</p>
-              </div>
-              <BarChart3 className="text-blue-200" size={24} />
-            </div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-green-500 to-green-600 text-white p-4 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-green-100 text-sm">Completed</p>
-                <p className="text-2xl font-bold">{stats.stats.completedJobs || 0}</p>
-              </div>
-              <CheckCircle className="text-green-200" size={24} />
-            </div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white p-4 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-orange-100 text-sm">Running</p>
-                <p className="text-2xl font-bold">{stats.stats.runningJobs || 0}</p>
-              </div>
-              <RefreshCw className="text-orange-200" size={24} />
-            </div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-4 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-purple-100 text-sm">Total Emails</p>
-                <p className="text-2xl font-bold">{stats.stats.totalEmails || 0}</p>
-              </div>
-              <Mail className="text-purple-200" size={24} />
-            </div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white p-4 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-indigo-100 text-sm">Total Phones</p>
-                <p className="text-2xl font-bold">{stats.stats.totalPhones || 0}</p>
-              </div>
-              <Phone className="text-indigo-200" size={24} />
-            </div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-teal-500 to-teal-600 text-white p-4 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-teal-100 text-sm">Businesses</p>
-                <p className="text-2xl font-bold">{stats.stats.totalBusinesses || 0}</p>
-              </div>
-              <Building className="text-teal-200" size={24} />
-            </div>
-          </div>
-        </motion.div>
-      )}
-
+      
       {/* Scraping Configuration */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
