@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
   Mail,
@@ -13,7 +13,15 @@ import {
   BarChart3,
   Activity,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Brain,
+  Lightbulb,
+  Target,
+  Zap,
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Sparkles
 } from 'lucide-react';
 import {
   LineChart,
@@ -31,15 +39,51 @@ const EmailTrackingDashboard: React.FC = () => {
   const [timeRange, setTimeRange] = useState('30d');
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showAIInsights, setShowAIInsights] = useState(false);
+  const [selectedCampaignForAI, setSelectedCampaignForAI] = useState(null);
 
-  // Fetch email analytics
-  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
-    queryKey: ['email-analytics', timeRange],
+  // API helper function with better error handling
+  const apiCall = async (endpoint: string, options = {}) => {
+    const token = localStorage.getItem('token');
+    
+    console.log('Making API call to:', `http://localhost:5000/api${endpoint}`);
+    console.log('Options:', options);
+    
+    const response = await fetch(`http://localhost:5000/api${endpoint}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...options.headers
+      },
+      ...options
+    });
+    
+    console.log('Response status:', response.status);
+    
+    if (!response.ok) {
+      let errorText;
+      try {
+        errorText = await response.text();
+        console.error('Error response body:', errorText);
+      } catch (e) {
+        errorText = 'Could not read error response';
+      }
+      throw new Error(`API call failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    
+    return response.json();
+  };
+
+  // Fetch email analytics with optional AI insights
+  const { data: analyticsData, isLoading: analyticsLoading, refetch: refetchAnalytics } = useQuery({
+    queryKey: ['email-analytics', timeRange, showAIInsights],
     queryFn: async () => {
-      const response = await fetch(`https://chatriox.com/api/email-tracking/analytics?timeRange=${timeRange}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      return response.json();
+      const params = new URLSearchParams();
+      params.append('timeRange', timeRange);
+      if (showAIInsights) {
+        params.append('includeAI', 'true');
+      }
+      return apiCall(`/email-tracking/analytics?${params}`);
     }
   });
 
@@ -50,18 +94,77 @@ const EmailTrackingDashboard: React.FC = () => {
       const params = new URLSearchParams();
       if (statusFilter !== 'all') params.append('status', statusFilter);
       if (searchTerm) params.append('recipient', searchTerm);
-      
-      const response = await fetch(`https://chatriox.com/api/email-tracking/activities?${params}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      return apiCall(`/email-tracking/activities?${params}`);
+    }
+  });
+
+  // AI Analysis mutations - FIXED ENDPOINTS
+  const campaignAIMutation = useMutation({
+    mutationFn: async (campaignId: string) => {
+      console.log('Calling campaign AI analysis for:', campaignId);
+      return apiCall(`/analysis/campaign/${campaignId}`, {
+        method: 'POST'
       });
-      return response.json();
+    },
+    onSuccess: (data) => {
+      console.log('Campaign AI analysis completed:', data);
+    },
+    onError: (error) => {
+      console.error('Campaign AI analysis failed:', error);
+    }
+  });
+
+  const overallAIMutation = useMutation({
+    mutationFn: async (timeRange: string) => {
+      console.log('Calling AI analysis with timeRange:', timeRange);
+      return apiCall('/analysis/overview', {
+        method: 'POST',
+        body: JSON.stringify({ timeRange })
+      });
+    },
+    onSuccess: (data) => {
+      console.log('Overall AI analysis completed:', data);
+      // Force show AI insights and refetch with AI parameter
+      setShowAIInsights(true);
+      setTimeout(() => {
+        refetchAnalytics();
+      }, 500);
+    },
+    onError: (error) => {
+      console.error('Overall AI analysis failed:', error);
     }
   });
 
   const analytics = analyticsData?.data?.overview || {};
-  const dailyStats = analyticsData?.data?.dailyStats || [];
+  // FIX: Process dailyStats to ensure proper data format
+  const rawDailyStats = analyticsData?.data?.dailyStats || [];
+  const dailyStats = rawDailyStats.map((stat: any) => ({
+    ...stat,
+    // Convert date object or string to proper format
+    day: typeof stat._id?.day === 'object' 
+      ? Object.keys(stat._id.day)[0] // If it's an object, take the first key
+      : stat._id?.day || stat.day || 'Unknown', // Otherwise use as is
+    // Ensure all numeric values are proper numbers
+    sent: Number(stat.sent) || 0,
+    delivered: Number(stat.delivered) || 0,
+    opened: Number(stat.opened) || 0,
+    clicked: Number(stat.clicked) || 0
+  }));
+  
   const topTemplates = analyticsData?.data?.topTemplates || [];
   const activities = activitiesData?.data || [];
+  const aiInsights = analyticsData?.data?.aiInsights;
+  const hasAIAnalysis = analyticsData?.data?.hasAIAnalysis;
+
+  // Add debugging
+  React.useEffect(() => {
+    console.log('Analytics data changed:', analyticsData);
+    console.log('Raw daily stats:', rawDailyStats);
+    console.log('Processed daily stats:', dailyStats);
+    console.log('AI Insights:', aiInsights);
+    console.log('Show AI Insights:', showAIInsights);
+    console.log('Has AI Analysis:', hasAIAnalysis);
+  }, [analyticsData, aiInsights, showAIInsights, hasAIAnalysis, dailyStats]);
 
   const statsCards = [
     {
@@ -124,8 +227,9 @@ const EmailTrackingDashboard: React.FC = () => {
       if (statusFilter !== 'all') params.append('status', statusFilter);
       if (searchTerm) params.append('recipient', searchTerm);
 
-      const response = await fetch(`https://chatriox.com/api/email-tracking/export?${params}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:5000/api/email-tracking/export?${params}`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       if (response.ok) {
@@ -142,6 +246,17 @@ const EmailTrackingDashboard: React.FC = () => {
     } catch (error) {
       console.error('Export error:', error);
     }
+  };
+
+  const handleGenerateAIInsights = () => {
+    console.log('Generate AI Insights clicked, timeRange:', timeRange);
+    setShowAIInsights(true); // Set this first
+    overallAIMutation.mutate(timeRange);
+  };
+
+  const handleCampaignAIAnalysis = (campaignId: string) => {
+    setSelectedCampaignForAI(campaignId);
+    campaignAIMutation.mutate(campaignId);
   };
 
   return (
@@ -166,15 +281,97 @@ const EmailTrackingDashboard: React.FC = () => {
             <option value="30d">Last 30 days</option>
             <option value="90d">Last 90 days</option>
           </select>
+          
+          {hasAIAnalysis && (
+            <button 
+              onClick={handleGenerateAIInsights}
+              disabled={overallAIMutation.isPending}
+              className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-2 rounded-xl hover:from-purple-700 hover:to-blue-700 transition-all duration-200 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {overallAIMutation.isPending ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              ) : (
+                <Brain size={16} />
+              )}
+              <span>{overallAIMutation.isPending ? 'Analyzing...' : 'AI Insights'}</span>
+            </button>
+          )}
+
           <button 
             onClick={handleExport}
-            className="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-colors"
+            className="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-colors flex items-center space-x-2"
           >
-            <Download className="inline mr-2" size={16} />
-            Export
+            <Download size={16} />
+            <span>Export</span>
           </button>
         </div>
       </motion.div>
+
+      {/* AI Insights Section */}
+      {(aiInsights || (showAIInsights && overallAIMutation.isPending)) && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-2xl p-6 border border-purple-200 dark:border-purple-800"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg">
+                <Sparkles className="text-white" size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">AI-Powered Insights</h3>
+                {aiInsights ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Generated {new Date(aiInsights.generatedAt).toLocaleString()}
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Analyzing your campaign performance...
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {overallAIMutation.isPending ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+              <span className="ml-3 text-gray-600 dark:text-gray-400">Generating AI insights...</span>
+            </div>
+          ) : aiInsights ? (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                    <Lightbulb className="mr-2 text-yellow-500" size={18} />
+                    Key Insights
+                  </h4>
+                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+                    {aiInsights.summary}
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                    <Target className="mr-2 text-green-500" size={18} />
+                    Recommendations
+                  </h4>
+                  <ul className="space-y-2">
+                    {aiInsights.recommendations?.slice(0, 3).map((rec: string, index: number) => (
+                      <li key={index} className="flex items-start space-x-2">
+                        <CheckCircle className="text-green-500 mt-0.5 flex-shrink-0" size={16} />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">{rec}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+            </>
+          ) : null}
+        </motion.div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -226,7 +423,14 @@ const EmailTrackingDashboard: React.FC = () => {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={dailyStats}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
-                <XAxis dataKey="_id.day" stroke="#6B7280" />
+                <XAxis 
+                  dataKey="day" 
+                  stroke="#6B7280"
+                  tickFormatter={(value) => {
+                    // Ensure we're always displaying a string
+                    return typeof value === 'string' ? value : String(value);
+                  }}
+                />
                 <YAxis stroke="#6B7280" />
                 <Tooltip 
                   contentStyle={{ 
@@ -270,11 +474,61 @@ const EmailTrackingDashboard: React.FC = () => {
         </motion.div>
       </div>
 
+      {/* Recent Campaigns with AI Analysis */}
+      {analyticsData?.data?.recentCampaigns && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+        >
+          <h3 className="text-lg font-semibold font-display text-gray-900 dark:text-white mb-6">Recent Campaigns</h3>
+          <div className="space-y-4">
+            {analyticsData.data.recentCampaigns.map((campaign: any) => (
+              <div key={campaign._id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-xl">
+                <div className="flex-1">
+                  <h4 className="font-medium text-gray-900 dark:text-white">{campaign.name}</h4>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{campaign.subject}</p>
+                  <div className="flex items-center space-x-4 mt-2">
+                    <span className="text-xs text-gray-500">
+                      Sent: {campaign.stats?.sent || 0}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      Opens: {campaign.openRate?.toFixed(1) || 0}%
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      Clicks: {campaign.clickRate?.toFixed(1) || 0}%
+                    </span>
+                  </div>
+                </div>
+                
+                {hasAIAnalysis && (
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleCampaignAIAnalysis(campaign._id)}
+                      disabled={campaignAIMutation.isPending && selectedCampaignForAI === campaign._id}
+                      className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-3 py-2 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 flex items-center space-x-1 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {campaignAIMutation.isPending && selectedCampaignForAI === campaign._id ? (
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                      ) : (
+                        <Zap size={14} />
+                      )}
+                      <span>Analyze</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       {/* Email Activities */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
+        transition={{ delay: 0.8 }}
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
       >
         <div className="flex items-center justify-between mb-6">
@@ -364,6 +618,26 @@ const EmailTrackingDashboard: React.FC = () => {
           </div>
         )}
       </motion.div>
+
+      {/* AI Usage Info */}
+      {hasAIAnalysis && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.0 }}
+          className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/10 dark:to-purple-900/10 rounded-2xl p-4 border border-blue-200 dark:border-blue-800"
+        >
+          <div className="flex items-center space-x-3">
+            <AlertCircle className="text-blue-600" size={20} />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">AI Analysis Available</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                Get personalized insights and recommendations powered by AI to optimize your email campaigns.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 };

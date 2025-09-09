@@ -24,11 +24,12 @@ import {
 interface CampaignWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onOpenContactManager?: () => void; // Add this line
+  onOpenContactManager?: () => void; 
+  onOpenSmtpConfig?: () => void;
 }
 
 
-const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose, onOpenContactManager }) => {
+const CampaignWizard: React.FC<CampaignWizardProps> = ({ isOpen, onClose, onOpenContactManager, onOpenSmtpConfig, refreshTrigger}) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [campaignData, setCampaignData] = useState({
     name: '',
@@ -70,7 +71,7 @@ const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
     'Content-Type': 'application/json'
   });
 
-  const getApiUrl = () => import.meta.env.VITE_API_URL || 'https://chatriox.com';
+  const getApiUrl = () => import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   // Fetch SMTP configurations
   const fetchSmtpConfigs = async () => {
@@ -259,7 +260,9 @@ const createCampaign = async () => {
                     <AlertCircle className="text-yellow-500 mx-auto mb-4" size={48} />
                     <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No SMTP Configuration Found</h4>
                     <p className="text-gray-600 dark:text-gray-400 mb-6">You need to configure SMTP settings before creating a campaign.</p>
-                    <button className="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors">
+                    <button 
+                    onClick={onOpenSmtpConfig}
+                    className="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors">
                       <Settings className="inline mr-2" size={16} />
                       Configure SMTP
                     </button>
@@ -454,9 +457,13 @@ const createCampaign = async () => {
                     <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No Contact Lists Found</h4>
                     <p className="text-gray-600 dark:text-gray-400 mb-6">Create a contact list or use our lead generation tools.</p>
                     <div className="flex justify-center space-x-4">
-                      <button 
-  onClick={onOpenContactManager}
-  className="bg-orange-600 text-white px-6 py-3 rounded-xl hover:bg-orange-700 transition-colors"
+<button 
+  onClick={() => {
+    onOpenContactManager?.();
+    // Refresh contact lists after contact manager closes
+    setTimeout(() => fetchContactLists(), 500);
+  }}
+  className="flex items-center space-x-2 mx-auto px-4 py-2 text-orange-600 bg-orange-50 dark:bg-orange-900/20 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/30"
 >
   <Users className="inline mr-2" size={16} />
   Manage Contact Lists

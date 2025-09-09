@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import io from 'socket.io-client';
 
-const API_BASE = 'https://chatriox.com';
+const API_BASE = 'http://localhost:5000';
 
 const WhatsAppSender = () => {
   const { user } = useAuth();
@@ -43,80 +43,172 @@ const WhatsAppSender = () => {
   };
 
   // Socket.IO setup
-  useEffect(() => {
-    if (!user?.id) return;
+// In your React WhatsAppSender component - Replace the Socket.IO setup useEffect
+useEffect(() => {
+  const timeouts = {};
+  
+  // Set timeout for any accounts in "connecting" status
+  Object.keys(connectionStatus).forEach(accountId => {
+    if (connectionStatus[accountId] === 'connecting') {
+      timeouts[accountId] = setTimeout(() => {
+        setConnectionStatus(prev => ({
+          ...prev,
+          [accountId]: 'disconnected'
+        }));
+        addNotification('error', 'Connection timeout - please try again');
+      }, 30000); // 30 second timeout
+    }
+  });
+  
+  return () => {
+    Object.values(timeouts).forEach(timeout => clearTimeout(timeout));
+  };
+}, [connectionStatus]);
 
-    const newSocket = io(API_BASE, {
-      auth: { token: localStorage.getItem('token') },
-      reconnection: false,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
-    });
+useEffect(() => {
+  if (!user?.id) return;
 
-    socketRef.current = newSocket;
-    setSocket(newSocket);
+  const newSocket = io(API_BASE, {
+    auth: { token: localStorage.getItem('token') },
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    timeout: 10000
+  });
 
-    // Connection events
-    newSocket.on('connect', () => {
-      console.log('Socket connected');
-      newSocket.emit('join_user_room', user.id);
-      addNotification('success', 'Real-time connection established');
-    });
+  socketRef.current = newSocket;
+  setSocket(newSocket);
 
-    newSocket.on('disconnect', () => {
-      addNotification('error', 'Real-time connection lost');
-    });
+  // Connection events
+  newSocket.on('connect', () => {
+    console.log('✅ Socket connected');
+    newSocket.emit('join_user_room', user.id);
+    addNotification('success', 'Real-time connection established');
+  });
 
-    // WhatsApp events
-    newSocket.on('qr_code', (data) => {
-      console.log('QR Code received:', data);
-      setQrCodeData(data.qrCode);
-      setShowQRCode(true);
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'connecting' }));
-    });
+  newSocket.on('disconnect', (reason) => {
+    console.log('❌ Socket disconnected:', reason);
+    addNotification('error', 'Real-time connection lost');
+  });
 
-    newSocket.on('whatsapp_authenticated', (data) => {
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'authenticated' }));
-      addNotification('success', 'WhatsApp authenticated successfully');
-    });
+  // WhatsApp events
+  newSocket.on('qr_code', (data) => {
+    console.log('📱 QR Code received:', data.accountId);
+    setQrCodeData(data.qrCode);
+    setShowQRCode(true);
+    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'connecting' }));
+    addNotification('info', 'QR Code ready - please scan with WhatsApp');
+  });
 
-    newSocket.on('whatsapp_ready', (data) => {
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'ready' }));
-      setShowQRCode(false);
-      setQrCodeData('');
+  newSocket.on('whatsapp_authenticated', (data) => {
+    console.log('🔐 WhatsApp authenticated:', data.accountId);
+    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'authenticated' }));
+    addNotification('info', 'WhatsApp authenticated - finalizing connection...');
+  });
+
+  newSocket.on('whatsapp_ready', (data) => {
+    console.log('🚀 WhatsApp ready:', data);
+    
+    // CRITICAL: Update connection status to ready
+    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'ready' }));
+    
+    // Close QR modal
+    setShowQRCode(false);
+    setQrCodeData('');
+    
+    // Invalidate and refetch accounts
+    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+    
+    // Show success notification with phone number if available
+    const phoneDisplay = data.phoneNumber ? ` (${data.phoneNumber})` : '';
+    addNotification('success', `WhatsApp account is now ready${phoneDisplay}`);
+  });
+
+  newSocket.on('whatsapp_disconnected', (data) => {
+    console.log('🔌 WhatsApp disconnected:', data);
+    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'disconnected' }));
+    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+    
+    const reason = data.reason ? ` (${data.reason})` : '';
+    addNotification('error', `WhatsApp account disconnected${reason}`);
+  });
+
+  newSocket.on('whatsapp_auth_failed', (data) => {
+    console.log('❌ WhatsApp auth failed:', data);
+    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'failed' }));
+    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+    
+    // Close QR modal on auth failure
+    setShowQRCode(false);
+    setQrCodeData('');
+    
+    addNotification('error', `Authentication failed: ${data.error}`);
+  });
+
+  // New event for connection errors
+  newSocket.on('whatsapp_error', (data) => {
+    console.log('🚫 WhatsApp error:', data);
+    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'failed' }));
+    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+    addNotification('error', `Connection error: ${data.error}`);
+  });
+
+  // Additional status verification events
+  newSocket.on('connection_status_update', (data) => {
+    console.log('🔄 Status update:', data);
+    if (data.verified) {
+      setConnectionStatus(prev => ({ ...prev, [data.accountId]: data.status }));
       queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-      addNotification('success', 'WhatsApp account is now ready');
-    });
+    }
+  });
 
-    newSocket.on('whatsapp_disconnected', (data) => {
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'disconnected' }));
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-      addNotification('error', 'WhatsApp account disconnected');
-    });
+  newSocket.on('whatsapp_state_change', (data) => {
+    console.log('🔄 State change:', data.accountId, data.state);
+    // Optional: You can show state changes to user for debugging
+    if (data.state === 'CONNECTED') {
+      // Double-check that we mark as ready when state is CONNECTED
+      setTimeout(() => {
+        setConnectionStatus(prev => {
+          if (prev[data.accountId] === 'authenticated') {
+            return { ...prev, [data.accountId]: 'ready' };
+          }
+          return prev;
+        });
+      }, 2000);
+    }
+  });
 
-    newSocket.on('whatsapp_connection_error', (data) => {
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'failed' }));
-      addNotification('error', `Connection failed: ${data.error}`);
-    });
+  // Campaign events
+  newSocket.on('campaign_progress', (data) => {
+    setSendingProgress(data);
+    queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+  });
 
-    // Campaign events
-    newSocket.on('campaign_progress', (data) => {
-      setSendingProgress(data);
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-    });
+  newSocket.on('campaign_completed', (data) => {
+    setSendingProgress(null);
+    queryClient.invalidateQueries({ queryKey: ['campaigns', 'analytics'] });
+    addNotification('success', `Campaign completed! Sent: ${data.stats?.sent || data.progress?.sent}`);
+  });
 
-    newSocket.on('campaign_completed', (data) => {
-      setSendingProgress(null);
-      queryClient.invalidateQueries({ queryKey: ['campaigns', 'analytics'] });
-      addNotification('success', `Campaign completed! Sent: ${data.progress.sent}`);
-    });
+  newSocket.on('message_status_update', (data) => {
+    // Handle individual message status updates
+    queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+  });
 
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.close();
-      }
-    };
-  }, [user?.id, queryClient]);
+  // Error handling
+  newSocket.on('connect_error', (error) => {
+    console.error('Socket connection error:', error);
+    addNotification('error', 'Failed to establish real-time connection');
+  });
+
+  // Cleanup
+  return () => {
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.close();
+    }
+  };
+}, [user?.id, queryClient]);
 
   // Fetch WhatsApp accounts
   const { data: accounts, isLoading: accountsLoading, error: accountsError } = useQuery({
@@ -164,33 +256,52 @@ const { data: analytics, isLoading: analyticsLoading } = useQuery({
 });
 
   // Connect account mutation
-  const connectAccountMutation = useMutation({
-    mutationFn: async (accountName) => {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/api/whatsapp-web/connect`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ accountName })
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to connect account');
-      }
-      
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-      addNotification('info', 'Connecting WhatsApp account...');
-    },
-    onError: (error) => {
-      addNotification('error', error.message);
+const connectAccountMutation = useMutation({
+  mutationFn: async (accountName) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_BASE}/api/whatsapp-web/connect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ accountName })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to connect account');
     }
-  });
+    
+    return response.json();
+  },
+  onMutate: () => {
+    // Clear any existing connection status before starting new connection
+    setConnectionStatus(prev => {
+      const cleaned = {};
+      Object.keys(prev).forEach(key => {
+        if (prev[key] !== 'connecting') {
+          cleaned[key] = prev[key];
+        }
+      });
+      return cleaned;
+    });
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+    addNotification('info', 'Connecting WhatsApp account...');
+  },
+  onError: (error) => {
+    addNotification('error', error.message);
+  }
+});
+
+
+const resetAllStuckConnections = () => {
+  setConnectionStatus({});
+  queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+  addNotification('info', 'All connection statuses reset');
+};
 
   // Disconnect account mutation
   const disconnectAccountMutation = useMutation({
@@ -436,6 +547,13 @@ const { data: analytics, isLoading: analyticsLoading } = useQuery({
             <BarChart3 className="inline mr-2" size={16} />
             Analytics
           </button>
+          <button 
+  onClick={resetAllStuckConnections}
+  className="text-sm bg-red-100 text-red-800 px-3 py-1 rounded-lg hover:bg-red-200 transition-colors"
+>
+  Reset Stuck Connections
+</button>
+
           <button 
             onClick={handleConnectAccount}
             disabled={connectAccountMutation.isPending}
