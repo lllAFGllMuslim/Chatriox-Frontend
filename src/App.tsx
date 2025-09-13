@@ -11,7 +11,7 @@ import GmailSender from './components/GmailSender';
 import WhatsAppSender from './components/WhatsAppSender';
 import MailScraper from './components/MailScraper';
 import EmailValidation from './components/EmailValidation';
-import Accounts from './components/Accounts';
+import TemplateManager from './components/templates/TemplateManager';
 import Settings from './components/Settings';
 import Login from './components/Login';
 import Register from './components/Register';
@@ -72,7 +72,7 @@ const AppContent: React.FC = () => {
               <Route path="/mail-scraper" element={<MailScraper />} />
               <Route path="/email-validation" element={<EmailValidation />} />
               <Route path="/email-tracking" element={<EmailTrackingDashboard />} />
-              <Route path="/accounts" element={<Accounts />} />
+              <Route path="/template-manager" element={<TemplateManager />} /> {/* Add Template Manager route */}
               <Route path="/settings" element={<Settings />} />
               <Route path="/plans" element={<Plans />} />
               <Route path="/checkout" element={<CheckoutPage />} />

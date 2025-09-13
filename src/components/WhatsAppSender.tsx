@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
-  MessageSquare, Plus, QrCode, Send, Users, Image, FileText, Video,
-  CheckCircle, XCircle, AlertTriangle, RefreshCw, BarChart3, Clock,
-  Upload, Eye, Play, Pause, TrendingUp, Activity, Wifi, WifiOff, Power, RotateCcw
+  MessageSquare, Plus, QrCode, Send, Users, Image, Video,
+  CheckCircle, XCircle, RefreshCw, BarChart3, Upload, Eye, 
+  TrendingUp, Wifi, WifiOff, Power, RotateCcw
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -26,183 +26,214 @@ const WhatsAppSender = () => {
   const [mediaFile, setMediaFile] = useState(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [socket, setSocket] = useState(null);
-  const [connectionStatus, setConnectionStatus] = useState({});
   const [sendingProgress, setSendingProgress] = useState(null);
   const [notifications, setNotifications] = useState([]);
 
   const queryClient = useQueryClient();
   const socketRef = useRef(null);
 
-  // Notification helper
+  // Simplified notification system
   const addNotification = (type, message) => {
     const id = Date.now().toString();
     setNotifications(prev => [...prev, { id, type, message }]);
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 5000);
+    }, 4000);
   };
 
-  // Socket.IO setup
-// In your React WhatsAppSender component - Replace the Socket.IO setup useEffect
-useEffect(() => {
-  const timeouts = {};
-  
-  // Set timeout for any accounts in "connecting" status
-  Object.keys(connectionStatus).forEach(accountId => {
-    if (connectionStatus[accountId] === 'connecting') {
-      timeouts[accountId] = setTimeout(() => {
-        setConnectionStatus(prev => ({
-          ...prev,
-          [accountId]: 'disconnected'
-        }));
-        addNotification('error', 'Connection timeout - please try again');
-      }, 30000); // 30 second timeout
-    }
-  });
-  
-  return () => {
-    Object.values(timeouts).forEach(timeout => clearTimeout(timeout));
-  };
-}, [connectionStatus]);
-
+  // Socket.IO setup - simplified
 useEffect(() => {
   if (!user?.id) return;
+
+  console.log('🚀 Setting up socket connection for user:', user.id);
 
   const newSocket = io(API_BASE, {
     auth: { token: localStorage.getItem('token') },
     reconnection: true,
-    reconnectionAttempts: 5,
+    reconnectionAttempts: 10,
     reconnectionDelay: 1000,
-    timeout: 10000
+    reconnectionDelayMax: 5000,
+    timeout: 20000,
+    forceNew: true
   });
 
   socketRef.current = newSocket;
   setSocket(newSocket);
 
-  // Connection events
   newSocket.on('connect', () => {
-    console.log('✅ Socket connected');
-    newSocket.emit('join_user_room', user.id);
-    addNotification('success', 'Real-time connection established');
+    console.log('✅ Socket connected with ID:', newSocket.id);
+    
+    // Join user room with confirmation
+    newSocket.emit('join_user_room', user.id, (response) => {
+      console.log('🏠 Joined user room response:', response);
+    });
+    
+    addNotification('success', 'Connected to server');
+  });
+
+  newSocket.on('connect_error', (error) => {
+    console.error('❌ Socket connection error:', error);
+    addNotification('error', 'Connection failed');
   });
 
   newSocket.on('disconnect', (reason) => {
     console.log('❌ Socket disconnected:', reason);
-    addNotification('error', 'Real-time connection lost');
+    addNotification('error', 'Lost connection to server');
+    
+    // Reset QR code states on disconnect
+    setShowQRCode(false);
+    setQrCodeData('');
   });
 
-  // WhatsApp events
-  newSocket.on('qr_code', (data) => {
-    console.log('📱 QR Code received:', data.accountId);
-    setQrCodeData(data.qrCode);
-    setShowQRCode(true);
-    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'connecting' }));
-    addNotification('info', 'QR Code ready - please scan with WhatsApp');
+  // ENHANCED QR CODE HANDLING - Multiple event listeners for reliability
+  const handleQRCode = (data, eventName = 'unknown') => {
+    console.log(`📱 ========== QR CODE RECEIVED ==========`);
+    console.log(`Event: ${eventName}`);
+    console.log(`Account ID: ${data.accountId}`);
+    console.log(`QR Data Length: ${data.qrCode ? data.qrCode.length : 0}`);
+    console.log(`QR Data Preview: ${data.qrCode ? data.qrCode.substring(0, 50) + '...' : 'NO DATA'}`);
+    console.log(`Timestamp: ${data.timestamp}`);
+    console.log(`========================================`);
+    
+    // Enhanced validation
+    if (!data || !data.qrCode) {
+      console.error('❌ QR data is missing or invalid');
+      addNotification('error', 'QR code data is missing');
+      return;
+    }
+    
+    if (typeof data.qrCode !== 'string' || data.qrCode.length < 50) {
+      console.error('❌ QR data is too short or invalid format');
+      addNotification('error', 'Invalid QR code format');
+      return;
+    }
+    
+    // Ensure proper data URL format
+    let qrToShow = data.qrCode;
+    if (!qrToShow.startsWith('data:image/')) {
+      if (qrToShow.startsWith('iVBOR') || qrToShow.match(/^[A-Za-z0-9+/=]+$/)) {
+        // Looks like base64 without prefix
+        qrToShow = `data:image/png;base64,${qrToShow}`;
+        console.log('🔧 Added data URL prefix to base64 data');
+      } else {
+        console.error('❌ QR data format not recognized');
+        addNotification('error', 'QR code format not supported');
+        return;
+      }
+    }
+    
+    // Test image validity
+    const testImage = new Image();
+    testImage.onload = () => {
+      console.log('✅ QR image is valid and loadable');
+      setQrCodeData(qrToShow);
+      setShowQRCode(true);
+      addNotification('success', 'QR Code ready! Scan with WhatsApp');
+    };
+    
+    testImage.onerror = () => {
+      console.error('❌ QR image failed to load');
+      addNotification('error', 'QR code image is corrupted');
+    };
+    
+    testImage.src = qrToShow;
+  };
+
+  // Register ALL possible QR events
+  const qrEvents = [
+    'qr_code',
+    'whatsapp_qr', 
+    'qr_generated',
+    'qr_ready',
+    'qr_code_direct',
+    'whatsapp_qr_direct'
+  ];
+  
+  qrEvents.forEach(eventName => {
+    newSocket.on(eventName, (data) => handleQRCode(data, eventName));
+  });
+
+  // Status events
+  newSocket.on('whatsapp_ready', (data) => {
+    console.log('✅ WhatsApp ready for account:', data.accountId);
+    
+    // Hide QR code immediately when ready
+    setShowQRCode(false);
+    setQrCodeData('');
+    
+    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+    
+    const phoneDisplay = data.phoneNumber ? ` (${data.phoneNumber})` : '';
+    const profileDisplay = data.profileName ? ` - ${data.profileName}` : '';
+    addNotification('success', `WhatsApp connected${phoneDisplay}${profileDisplay}`);
   });
 
   newSocket.on('whatsapp_authenticated', (data) => {
-    console.log('🔐 WhatsApp authenticated:', data.accountId);
-    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'authenticated' }));
-    addNotification('info', 'WhatsApp authenticated - finalizing connection...');
+    console.log('✅ WhatsApp authenticated for account:', data.accountId);
+    addNotification('info', 'Authenticated - finalizing connection...');
+    // Keep QR visible during authentication process
   });
 
-  newSocket.on('whatsapp_ready', (data) => {
-    console.log('🚀 WhatsApp ready:', data);
-    
-    // CRITICAL: Update connection status to ready
-    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'ready' }));
-    
-    // Close QR modal
-    setShowQRCode(false);
-    setQrCodeData('');
-    
-    // Invalidate and refetch accounts
-    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-    
-    // Show success notification with phone number if available
-    const phoneDisplay = data.phoneNumber ? ` (${data.phoneNumber})` : '';
-    addNotification('success', `WhatsApp account is now ready${phoneDisplay}`);
+  newSocket.on('whatsapp_initializing', (data) => {
+    console.log('🔄 WhatsApp initializing for account:', data.accountId);
+    addNotification('info', data.message || 'Initializing WhatsApp client...');
+  });
+
+  newSocket.on('whatsapp_loading', (data) => {
+    console.log(`⏳ WhatsApp loading ${data.percent}%: ${data.message}`);
+    if (data.percent) {
+      addNotification('info', `Loading: ${data.percent}% - ${data.message}`);
+    }
   });
 
   newSocket.on('whatsapp_disconnected', (data) => {
-    console.log('🔌 WhatsApp disconnected:', data);
-    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'disconnected' }));
+    console.log('❌ WhatsApp disconnected:', data.accountId, data.reason);
+    
+    setShowQRCode(false);
+    setQrCodeData('');
     queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
     
-    const reason = data.reason ? ` (${data.reason})` : '';
-    addNotification('error', `WhatsApp account disconnected${reason}`);
+    const reason = data.reason || 'Unknown reason';
+    addNotification('error', `Account disconnected: ${reason}`);
   });
 
   newSocket.on('whatsapp_auth_failed', (data) => {
-    console.log('❌ WhatsApp auth failed:', data);
-    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'failed' }));
-    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+    console.log('❌ WhatsApp auth failed:', data.accountId);
     
-    // Close QR modal on auth failure
     setShowQRCode(false);
     setQrCodeData('');
-    
-    addNotification('error', `Authentication failed: ${data.error}`);
-  });
-
-  // New event for connection errors
-  newSocket.on('whatsapp_error', (data) => {
-    console.log('🚫 WhatsApp error:', data);
-    setConnectionStatus(prev => ({ ...prev, [data.accountId]: 'failed' }));
     queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-    addNotification('error', `Connection error: ${data.error}`);
+    addNotification('error', 'Authentication failed - please try connecting again');
   });
 
-  // Additional status verification events
-  newSocket.on('connection_status_update', (data) => {
-    console.log('🔄 Status update:', data);
-    if (data.verified) {
-      setConnectionStatus(prev => ({ ...prev, [data.accountId]: data.status }));
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+  newSocket.on('whatsapp_error', (data) => {
+    console.log('❌ WhatsApp error:', data.accountId, data.error);
+    
+    setShowQRCode(false);
+    setQrCodeData('');
+    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+    
+    const errorMsg = data.error || 'Unknown error occurred';
+    addNotification('error', `WhatsApp Error: ${errorMsg}`);
+  });
+
+  newSocket.on('qr_error', (data) => {
+    console.log('❌ QR generation error:', data);
+    
+    setShowQRCode(false);
+    setQrCodeData('');
+    addNotification('error', 'QR code generation failed - please try again');
+  });
+
+  // Debug: Log all socket events
+  newSocket.onAny((eventName, ...args) => {
+    if (eventName.includes('qr') || eventName.includes('whatsapp')) {
+      console.log(`🔍 Socket event: ${eventName}`, args[0]);
     }
   });
 
-  newSocket.on('whatsapp_state_change', (data) => {
-    console.log('🔄 State change:', data.accountId, data.state);
-    // Optional: You can show state changes to user for debugging
-    if (data.state === 'CONNECTED') {
-      // Double-check that we mark as ready when state is CONNECTED
-      setTimeout(() => {
-        setConnectionStatus(prev => {
-          if (prev[data.accountId] === 'authenticated') {
-            return { ...prev, [data.accountId]: 'ready' };
-          }
-          return prev;
-        });
-      }, 2000);
-    }
-  });
-
-  // Campaign events
-  newSocket.on('campaign_progress', (data) => {
-    setSendingProgress(data);
-    queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-  });
-
-  newSocket.on('campaign_completed', (data) => {
-    setSendingProgress(null);
-    queryClient.invalidateQueries({ queryKey: ['campaigns', 'analytics'] });
-    addNotification('success', `Campaign completed! Sent: ${data.stats?.sent || data.progress?.sent}`);
-  });
-
-  newSocket.on('message_status_update', (data) => {
-    // Handle individual message status updates
-    queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-  });
-
-  // Error handling
-  newSocket.on('connect_error', (error) => {
-    console.error('Socket connection error:', error);
-    addNotification('error', 'Failed to establish real-time connection');
-  });
-
-  // Cleanup
   return () => {
+    console.log('🧹 Cleaning up socket connection');
     if (socketRef.current) {
       socketRef.current.removeAllListeners();
       socketRef.current.close();
@@ -210,164 +241,123 @@ useEffect(() => {
   };
 }, [user?.id, queryClient]);
 
-  // Fetch WhatsApp accounts
+
+  // Fetch data - simplified queries
   const { data: accounts, isLoading: accountsLoading, error: accountsError } = useQuery({
     queryKey: ['whatsapp-accounts'],
     queryFn: async () => {
-      const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE}/api/whatsapp-web/accounts`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (!response.ok) throw new Error('Failed to fetch accounts');
+      return response.json();
+    },
+    refetchInterval: 10000
+  });
+
+  const { data: campaigns, isLoading: campaignsLoading } = useQuery({
+    queryKey: ['campaigns'],
+    queryFn: async () => {
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/campaigns`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!response.ok) throw new Error('Failed to fetch campaigns');
+      return response.json();
+    },
+    refetchInterval: 15000
+  });
+
+  const { data: analytics } = useQuery({
+    queryKey: ['analytics'],
+    queryFn: async () => {
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/analytics?timeRange=7d`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!response.ok) throw new Error('Failed to fetch analytics');
       return response.json();
     },
     refetchInterval: 30000
   });
 
-  // Fetch campaigns
-  const { data: campaigns, isLoading: campaignsLoading } = useQuery({
-    queryKey: ['campaigns'],
-    queryFn: async () => {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/api/whatsapp-web/campaigns`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+  // Mutations - simplified
+  const connectAccountMutation = useMutation({
+    mutationFn: async (accountName) => {
+      const response = await fetch(`${API_BASE}/api/whatsapp-web/connect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ accountName })
       });
-      if (!response.ok) throw new Error('Failed to fetch campaigns');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Connection failed');
+      }
       return response.json();
     },
-    refetchInterval: 5000
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
+      addNotification('info', 'Connecting account...');
+    },
+    onError: (error) => {
+      addNotification('error', error.message);
+    }
   });
 
-  // Fetch analytics
-  // In your WhatsApp component, replace the analytics query with this:
-
-const { data: analytics, isLoading: analyticsLoading } = useQuery({
-  queryKey: ['analytics'],
-  queryFn: async () => {
-    const token = localStorage.getItem('token');
-    // FIXED: Default to 7 days
-    const response = await fetch(`${API_BASE}/api/whatsapp-web/analytics?timeRange=7d`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to fetch analytics');
-    return response.json();
-  },
-  refetchInterval: 10000
-});
-
-  // Connect account mutation
-const connectAccountMutation = useMutation({
-  mutationFn: async (accountName) => {
-    const token = localStorage.getItem('token');
-    const response = await fetch(`${API_BASE}/api/whatsapp-web/connect`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ accountName })
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to connect account');
-    }
-    
-    return response.json();
-  },
-  onMutate: () => {
-    // Clear any existing connection status before starting new connection
-    setConnectionStatus(prev => {
-      const cleaned = {};
-      Object.keys(prev).forEach(key => {
-        if (prev[key] !== 'connecting') {
-          cleaned[key] = prev[key];
-        }
-      });
-      return cleaned;
-    });
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-    addNotification('info', 'Connecting WhatsApp account...');
-  },
-  onError: (error) => {
-    addNotification('error', error.message);
-  }
-});
-
-
-const resetAllStuckConnections = () => {
-  setConnectionStatus({});
-  queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-  addNotification('info', 'All connection statuses reset');
-};
-
-  // Disconnect account mutation
   const disconnectAccountMutation = useMutation({
     mutationFn: async (accountId) => {
-      const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE}/api/whatsapp-web/disconnect/${accountId}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
-      
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to disconnect account');
+        throw new Error(error.message || 'Disconnect failed');
       }
-      
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-      addNotification('success', 'Account disconnected successfully');
+      addNotification('success', 'Account disconnected');
     },
     onError: (error) => {
       addNotification('error', error.message);
     }
   });
 
-  // Delete account mutation
   const deleteAccountMutation = useMutation({
     mutationFn: async (accountId) => {
-      const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE}/api/whatsapp-web/accounts/${accountId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
-      
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to delete account');
+        throw new Error(error.message || 'Delete failed');
       }
-      
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-      addNotification('success', 'Account deleted successfully');
+      addNotification('success', 'Account deleted');
     },
     onError: (error) => {
       addNotification('error', error.message);
     }
   });
 
-  // Send message mutation
   const sendMessageMutation = useMutation({
     mutationFn: async (formData) => {
-      const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE}/api/whatsapp-web/send`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
         body: formData
       });
-      
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to send message');
+        throw new Error(error.message || 'Send failed');
       }
-      
       return response.json();
     },
     onSuccess: () => {
@@ -375,7 +365,7 @@ const resetAllStuckConnections = () => {
       setRecipients('');
       setMediaFile(null);
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-      addNotification('success', 'Message campaign started successfully');
+      addNotification('success', 'Campaign started');
     },
     onError: (error) => {
       addNotification('error', error.message);
@@ -383,25 +373,43 @@ const resetAllStuckConnections = () => {
   });
 
   // Event handlers
-  const handleConnectAccount = () => {
-    const accountName = `WhatsApp Account ${(accounts?.data?.length || 0) + 1}`;
-    connectAccountMutation.mutate(accountName);
-  };
+const handleConnectAccount = async () => {
+  const accountName = `Account ${(accounts?.data?.length || 0) + 1}`;
+  
+  console.log('🔌 Starting account connection:', accountName);
+  
+  // Reset QR states
+  setShowQRCode(false);
+  setQrCodeData('');
+  
+  try {
+    const response = await connectAccountMutation.mutateAsync(accountName);
+    console.log('✅ Connection response:', response);
+    
+    // Add a timeout to show QR modal if QR doesn't appear within 10 seconds
+    setTimeout(() => {
+      if (!showQRCode && !qrCodeData) {
+        console.log('⏰ QR timeout - showing modal anyway');
+        setShowQRCode(true);
+        addNotification('info', 'Waiting for QR code...');
+      }
+    }, 10000);
+    
+  } catch (error) {
+    console.error('❌ Connection failed:', error);
+    addNotification('error', error.message || 'Connection failed');
+  }
+};
+
 
   const handleDisconnectAccount = (accountId) => {
-    if (window.confirm('Are you sure you want to disconnect this account?')) {
-      setConnectionStatus(prev => ({ ...prev, [accountId]: 'disconnected' }));
+    if (window.confirm('Disconnect this account?')) {
       disconnectAccountMutation.mutate(accountId);
     }
   };
 
   const handleDeleteAccount = (accountId) => {
-    if (window.confirm('Are you sure you want to permanently delete this account? This will also delete all related campaigns and messages.')) {
-      setConnectionStatus(prev => {
-        const updated = { ...prev };
-        delete updated[accountId];
-        return updated;
-      });
+    if (window.confirm('Permanently delete this account and all its data?')) {
       deleteAccountMutation.mutate(accountId);
     }
   };
@@ -431,68 +439,38 @@ const resetAllStuckConnections = () => {
     sendMessageMutation.mutate(formData);
   };
 
-  const closeQRModal = () => {
-    setShowQRCode(false);
-    setQrCodeData('');
-    
-    setConnectionStatus(prev => {
-      const updated = { ...prev };
-      Object.keys(updated).forEach(accountId => {
-        if (updated[accountId] === 'connecting') {
-          updated[accountId] = 'disconnected';
-        }
-      });
-      return updated;
-    });
-    
-    queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] });
-  };
-
-  // Status helpers
+  // Helper functions
   const getStatusIcon = (account) => {
-    const currentStatus = connectionStatus[account._id] || account.status;
-    
-    switch (currentStatus) {
+    switch (account.status) {
       case 'ready':
         return <CheckCircle className="text-green-500" size={16} />;
       case 'connecting':
       case 'authenticated':
         return <RefreshCw className="text-blue-500 animate-spin" size={16} />;
-      case 'disconnected':
-      case 'failed':
-        return <XCircle className="text-red-500" size={16} />;
       default:
-        return <AlertTriangle className="text-yellow-500" size={16} />;
+        return <XCircle className="text-red-500" size={16} />;
     }
   };
 
   const getStatusColor = (account) => {
-    const currentStatus = connectionStatus[account._id] || account.status;
-    
-    switch (currentStatus) {
+    switch (account.status) {
       case 'ready':
         return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400';
       case 'connecting':
       case 'authenticated':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400';
-      case 'disconnected':
-      case 'failed':
-        return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
       default:
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400';
+        return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
     }
   };
 
   const getStatusText = (account) => {
-    const currentStatus = connectionStatus[account._id] || account.status;
-    
-    switch (currentStatus) {
+    switch (account.status) {
       case 'ready': return 'Ready';
       case 'connecting': return 'Connecting...';
       case 'authenticated': return 'Authenticating...';
       case 'disconnected': return 'Disconnected';
-      case 'failed': return 'Failed';
-      default: return 'Unknown';
+      default: return 'Failed';
     }
   };
 
@@ -510,19 +488,18 @@ const resetAllStuckConnections = () => {
         {notifications.map((notification) => (
           <motion.div
             key={notification.id}
-            initial={{ opacity: 0, y: -50, x: '100%' }}
-            animate={{ opacity: 1, y: 0, x: 0 }}
-            exit={{ opacity: 0, x: '100%' }}
-            className={`fixed top-4 right-4 z-50 p-4 rounded-xl shadow-lg border max-w-sm ${
-              notification.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
-              notification.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
-              'bg-blue-50 border-blue-200 text-blue-800'
+            initial={{ opacity: 0, x: 300 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 300 }}
+            className={`fixed top-4 right-4 z-50 p-3 rounded-lg shadow-lg max-w-sm ${
+              notification.type === 'success' ? 'bg-green-50 border border-green-200 text-green-800' :
+              notification.type === 'error' ? 'bg-red-50 border border-red-200 text-red-800' :
+              'bg-blue-50 border border-blue-200 text-blue-800'
             }`}
           >
             <div className="flex items-center space-x-2">
               {notification.type === 'success' && <CheckCircle size={16} />}
               {notification.type === 'error' && <XCircle size={16} />}
-              {notification.type === 'info' && <AlertTriangle size={16} />}
               <span className="text-sm font-medium">{notification.message}</span>
             </div>
           </motion.div>
@@ -537,27 +514,20 @@ const resetAllStuckConnections = () => {
       >
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">WhatsApp Bulk Sender</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Send bulk WhatsApp messages with analytics.</p>
+          <p className="text-gray-600 dark:text-gray-400">Send bulk WhatsApp messages with analytics</p>
         </div>
         <div className="flex items-center space-x-3">
           <button 
             onClick={() => setShowAnalytics(!showAnalytics)}
-            className="bg-purple-600 text-white px-4 py-2 rounded-xl hover:bg-purple-700 transition-colors"
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
           >
             <BarChart3 className="inline mr-2" size={16} />
             Analytics
           </button>
           <button 
-  onClick={resetAllStuckConnections}
-  className="text-sm bg-red-100 text-red-800 px-3 py-1 rounded-lg hover:bg-red-200 transition-colors"
->
-  Reset Stuck Connections
-</button>
-
-          <button 
             onClick={handleConnectAccount}
             disabled={connectAccountMutation.isPending}
-            className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-2 rounded-xl hover:from-green-700 hover:to-green-800 transition-all shadow-lg disabled:opacity-50"
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50"
           >
             <Plus className="inline mr-2" size={16} />
             {connectAccountMutation.isPending ? 'Connecting...' : 'Connect Account'}
@@ -574,36 +544,28 @@ const resetAllStuckConnections = () => {
             exit={{ opacity: 0, height: 0 }}
             className="space-y-6"
           >
-            {/* Analytics Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {[
                 {
                   title: 'Total Messages',
                   value: analytics?.data?.overview?.totalMessages?.toLocaleString() || '0',
-                  change: analytics?.data?.overview?.messageGrowth || '+0%',
-                  icon: <MessageSquare className="text-blue-500" size={24} />,
-                  color: 'blue'
+                  icon: <MessageSquare className="text-blue-500" size={20} />
                 },
                 {
                   title: 'Delivery Rate',
                   value: `${analytics?.data?.overview?.deliveryRate?.toFixed(1) || '0.0'}%`,
-                  change: analytics?.data?.overview?.deliveryGrowth || '+0%',
-                  icon: <TrendingUp className="text-green-500" size={24} />,
-                  color: 'green'
+                  icon: <TrendingUp className="text-green-500" size={20} />
                 },
                 {
                   title: 'Read Rate',
                   value: `${analytics?.data?.overview?.readRate?.toFixed(1) || '0.0'}%`,
-                  change: analytics?.data?.overview?.readGrowth || '+0%',
-                  icon: <Eye className="text-purple-500" size={24} />,
-                  color: 'purple'
+                  icon: <Eye className="text-purple-500" size={20} />
                 },
                 {
                   title: 'Active Accounts',
                   value: accounts?.data?.filter(acc => acc.status === 'ready').length || 0,
-                  change: '+0%',
-                  icon: <Users className="text-orange-500" size={24} />,
-                  color: 'orange'
+                  icon: <Users className="text-orange-500" size={20} />
                 }
               ].map((stat, index) => (
                 <motion.div
@@ -611,68 +573,46 @@ const resetAllStuckConnections = () => {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+                  className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-4"
                 >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{stat.title}</p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{stat.value}</p>
-                    </div>
-                    <div className="flex-shrink-0">
-                      {stat.icon}
-                    </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{stat.title}</p>
+                    {stat.icon}
                   </div>
-                  <div className="flex items-center">
-                    <span className={`text-sm font-medium ${stat.change.startsWith('+') ? 'text-green-600' : 'text-red-600'}`}>
-                      {stat.change}
-                    </span>
-                    <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">vs last period</span>
-                  </div>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
                 </motion.div>
               ))}
             </div>
 
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Message Performance Chart */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Message Performance</h3>
-                <div className="h-80">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-6">
+                <h3 className="text-lg font-semibold mb-4">Message Performance</h3>
+                <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={analytics?.data?.dailyStats || []}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
-                      <XAxis dataKey="date" stroke="#6B7280" />
-                      <YAxis stroke="#6B7280" />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: '#1F2937', 
-                          border: 'none', 
-                          borderRadius: '12px',
-                          color: '#F9FAFB'
-                        }} 
-                      />
-                      <Line type="monotone" dataKey="sent" stroke="#3B82F6" strokeWidth={3} name="Sent" />
-                      <Line type="monotone" dataKey="delivered" stroke="#10B981" strokeWidth={3} name="Delivered" />
-                      <Line type="monotone" dataKey="read" stroke="#8B5CF6" strokeWidth={3} name="Read" />
-                      <Line type="monotone" dataKey="failed" stroke="#EF4444" strokeWidth={3} name="Failed" />
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line dataKey="sent" stroke="#3B82F6" name="Sent" />
+                      <Line dataKey="delivered" stroke="#10B981" name="Delivered" />
+                      <Line dataKey="read" stroke="#8B5CF6" name="Read" />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Message Types Distribution */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Message Types</h3>
-                <div className="h-80">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-6">
+                <h3 className="text-lg font-semibold mb-4">Message Types</h3>
+                <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={analytics?.data?.messageTypes || []}
                         cx="50%"
                         cy="50%"
-                        innerRadius={60}
-                        outerRadius={120}
-                        paddingAngle={5}
+                        outerRadius={80}
                         dataKey="count"
                       >
                         {(analytics?.data?.messageTypes || []).map((entry, index) => (
@@ -689,62 +629,54 @@ const resetAllStuckConnections = () => {
         )}
       </AnimatePresence>
 
-      {/* WhatsApp Accounts */}
+      {/* Accounts Section */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-6"
       >
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Connected WhatsApp Accounts</h3>
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center space-x-1 text-sm text-gray-500">
-              {socket?.connected ? (
-                <>
-                  <Wifi className="text-green-500" size={14} />
-                  <span>Connected</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff className="text-red-500" size={14} />
-                  <span>Disconnected</span>
-                </>
-              )}
-            </div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">WhatsApp Accounts</h3>
+          <div className="flex items-center space-x-2 text-sm text-gray-500">
+            {socket?.connected ? (
+              <>
+                <Wifi className="text-green-500" size={14} />
+                <span>Connected</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="text-red-500" size={14} />
+                <span>Disconnected</span>
+              </>
+            )}
           </div>
         </div>
         
         {accountsLoading ? (
           <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
-            <p className="text-gray-500 mt-2">Loading accounts...</p>
+            <RefreshCw className="animate-spin mx-auto mb-2" size={32} />
+            <p className="text-gray-500">Loading accounts...</p>
           </div>
         ) : accountsError ? (
           <div className="text-center py-8">
             <XCircle className="text-red-500 mx-auto mb-4" size={48} />
-            <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Failed to Load Accounts</h4>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">{accountsError.message}</p>
+            <p className="text-red-600 mb-4">{accountsError.message}</p>
             <button 
               onClick={() => queryClient.invalidateQueries({ queryKey: ['whatsapp-accounts'] })}
-              className="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-colors"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
             >
-              <RefreshCw className="inline mr-2" size={16} />
               Retry
             </button>
           </div>
         ) : accounts?.data?.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="text-center py-8">
             <MessageSquare className="text-gray-400 mx-auto mb-4" size={48} />
-            <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No WhatsApp Accounts Connected</h4>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">Connect your first WhatsApp account to start sending bulk messages.</p>
+            <p className="text-gray-600 mb-4">No accounts connected</p>
             <button 
               onClick={handleConnectAccount}
-              disabled={connectAccountMutation.isPending}
-              className="bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
             >
-              <QrCode className="inline mr-2" size={16} />
-              {connectAccountMutation.isPending ? 'Connecting...' : 'Connect WhatsApp Account'}
+              Connect First Account
             </button>
           </div>
         ) : (
@@ -752,104 +684,68 @@ const resetAllStuckConnections = () => {
             {accounts?.data?.map((account) => (
               <div
                 key={account._id}
-                className={`p-4 border-2 rounded-xl transition-all cursor-pointer ${
+                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
                   selectedAccount?._id === account._id
                     ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
+                    : 'border-gray-200 hover:border-gray-300'
                 }`}
                 onClick={() => account.status === 'ready' && setSelectedAccount(account)}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-semibold text-gray-900 dark:text-white">{account.accountName}</h4>
+                  <h4 className="font-semibold">{account.accountName}</h4>
                   <div className="flex items-center space-x-2">
                     {getStatusIcon(account)}
                     <div className="flex space-x-1">
-                      {/* Reconnect button for disconnected/failed accounts */}
-                      {['disconnected', 'failed'].includes(connectionStatus[account._id] || account.status) && (
+                      {account.status === 'disconnected' && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             connectAccountMutation.mutate(account.accountName);
                           }}
-                          disabled={connectAccountMutation.isPending}
-                          className="p-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors disabled:opacity-50"
+                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
                           title="Reconnect"
                         >
                           <RotateCcw size={14} />
                         </button>
                       )}
-                      
-                      {/* Disconnect button for ready/authenticated accounts */}
-                      {['ready', 'authenticated'].includes(connectionStatus[account._id] || account.status) && (
+                      {account.status === 'ready' && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDisconnectAccount(account._id);
                           }}
-                          disabled={disconnectAccountMutation.isPending}
-                          className="p-1 text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded transition-colors disabled:opacity-50"
+                          className="p-1 text-orange-600 hover:bg-orange-50 rounded"
                           title="Disconnect"
                         >
                           <Power size={14} />
                         </button>
                       )}
-                      
-                      {/* Delete button */}
-                      {!['connecting', 'authenticated'].includes(connectionStatus[account._id] || account.status) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteAccount(account._id);
-                          }}
-                          className="p-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                          title="Delete Account"
-                        >
-                          <XCircle size={14} />
-                        </button>
-                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteAccount(account._id);
+                        }}
+                        className="p-1 text-red-600 hover:bg-red-50 rounded"
+                        title="Delete"
+                      >
+                        <XCircle size={14} />
+                      </button>
                     </div>
                   </div>
                 </div>
                 
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">Phone:</span>
-                    <span className="text-gray-900 dark:text-white">
-                      {account.phoneNumber || 'Not connected'}
-                    </span>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Phone:</span>
+                    <span>{account.phoneNumber || 'Not connected'}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">Status:</span>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(account)}`}>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Status:</span>
+                    <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(account)}`}>
                       {getStatusText(account)}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">Last Activity:</span>
-                    <span className="text-gray-900 dark:text-white">
-                      {account.lastActivity ? new Date(account.lastActivity).toLocaleDateString() : 'Never'}
-                    </span>
-                  </div>
                 </div>
-
-                {selectedAccount?._id === account._id && (
-                  <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-green-600 dark:text-green-400 font-medium">
-                        ✓ Selected for messaging
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedAccount(null);
-                        }}
-                        className="text-gray-500 hover:text-gray-700"
-                      >
-                        Deselect
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -861,23 +757,15 @@ const resetAllStuckConnections = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+          className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-6"
         >
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Compose Message</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Using account: {selectedAccount.accountName} ({selectedAccount.phoneNumber})
-              </p>
-            </div>
-          </div>
+          <h3 className="text-lg font-semibold mb-4">Compose Message</h3>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Message Type Selection */}
+            {/* Message Type */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Message Type</label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <label className="block text-sm font-medium mb-3">Message Type</label>
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   { type: 'text', icon: MessageSquare, label: 'Text' },
                   { type: 'image', icon: Image, label: 'Image' },
@@ -886,14 +774,14 @@ const resetAllStuckConnections = () => {
                   <button
                     key={type}
                     onClick={() => setMessageType(type)}
-                    className={`p-3 border-2 rounded-xl transition-all ${
+                    className={`p-3 border-2 rounded-lg transition-all ${
                       messageType === type
-                        ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                        : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
+                        ? 'border-green-500 bg-green-50'
+                        : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     <Icon className={`mx-auto mb-2 ${messageType === type ? 'text-green-600' : 'text-gray-400'}`} size={20} />
-                    <p className={`text-sm font-medium ${messageType === type ? 'text-green-800 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                    <p className={`text-sm ${messageType === type ? 'text-green-800' : 'text-gray-600'}`}>
                       {label}
                     </p>
                   </button>
@@ -903,55 +791,37 @@ const resetAllStuckConnections = () => {
 
             {/* Recipients */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Recipients</label>
-              <div className="space-y-3">
-                <textarea
-                  value={recipients}
-                  onChange={(e) => setRecipients(e.target.value)}
-                  placeholder="Enter phone numbers (one per line or comma separated)&#10;+1234567890&#10;+0987654321"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
-                  rows={4}
-                />
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">
-                    {recipientList.length} recipient{recipientList.length !== 1 ? 's' : ''} selected
-                  </span>
-                </div>
-              </div>
+              <label className="block text-sm font-medium mb-3">Recipients</label>
+              <textarea
+                value={recipients}
+                onChange={(e) => setRecipients(e.target.value)}
+                placeholder="Enter phone numbers (one per line)..."
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                rows={4}
+              />
+              <p className="text-sm text-gray-500 mt-2">
+                {recipientList.length} recipient{recipientList.length !== 1 ? 's' : ''}
+              </p>
             </div>
           </div>
 
           {/* Media Upload */}
           {messageType !== 'text' && (
             <div className="mt-6">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Upload Media</label>
-              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 text-center">
+              <label className="block text-sm font-medium mb-2">Upload Media</label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                 <input
                   type="file"
                   onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
-                  accept={
-                    messageType === 'image' ? 'image/*' :
-                    messageType === 'video' ? 'video/*' : '*'
-                  }
+                  accept={messageType === 'image' ? 'image/*' : 'video/*'}
                   className="hidden"
                   id="media-upload"
                 />
                 <div className="cursor-pointer" onClick={() => document.getElementById('media-upload')?.click()}>
-                  <Upload className="mx-auto text-gray-400 mb-3" size={32} />
-                  <p className="text-gray-600 dark:text-gray-400 mb-2">
-                    {mediaFile ? (
-                      <>
-                        <span className="font-medium">{mediaFile.name}</span>
-                        <br />
-                        <span className="text-sm">({(mediaFile.size / 1024 / 1024).toFixed(2)} MB)</span>
-                      </>
-                    ) : (
-                      `Upload ${messageType} file`
-                    )}
+                  <Upload className="mx-auto text-gray-400 mb-2" size={32} />
+                  <p className="text-gray-600">
+                    {mediaFile ? mediaFile.name : `Upload ${messageType} file`}
                   </p>
-                  <div className="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-colors inline-block">
-                    {mediaFile ? 'Change File' : 'Choose File'}
-                  </div>
                 </div>
               </div>
             </div>
@@ -959,33 +829,22 @@ const resetAllStuckConnections = () => {
 
           {/* Message Content */}
           <div className="mt-6">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium mb-2">
               {messageType === 'text' ? 'Message Content *' : 'Caption (Optional)'}
             </label>
             <textarea
               value={messageContent}
               onChange={(e) => setMessageContent(e.target.value)}
               rows={4}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder={
-                messageType === 'text' 
-                  ? "Type your message here..." 
-                  : "Add a caption to your media (optional)..."
-              }
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              placeholder={messageType === 'text' ? "Type your message..." : "Add caption..."}
             />
-            <div className="flex items-center justify-between mt-2">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Character count: {messageContent.length}
-              </p>
-            </div>
           </div>
 
           {/* Send Button */}
-          <div className="mt-6 flex items-center justify-between">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              <div>
-                {recipientList.length} contact{recipientList.length !== 1 ? 's' : ''} selected
-              </div>
+          <div className="mt-6 flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              {recipientList.length} contact{recipientList.length !== 1 ? 's' : ''} selected
               {recipientList.length > 0 && (
                 <div className="text-xs mt-1">
                   Estimated time: ~{Math.ceil(recipientList.length * 3)} seconds
@@ -1000,12 +859,12 @@ const resetAllStuckConnections = () => {
                 (messageType !== 'text' && !mediaFile) ||
                 sendMessageMutation.isPending
               }
-              className="flex items-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {sendMessageMutation.isPending ? (
                 <>
                   <RefreshCw className="animate-spin" size={16} />
-                  <span>Starting Campaign...</span>
+                  <span>Starting...</span>
                 </>
               ) : (
                 <>
@@ -1021,18 +880,18 @@ const resetAllStuckConnections = () => {
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
-              className="mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4"
+              className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4"
             >
               <div className="flex items-center justify-between mb-3">
-                <h4 className="font-semibold text-blue-800 dark:text-blue-400">Sending Progress</h4>
-                <span className="text-sm text-blue-600 dark:text-blue-400">
+                <h4 className="font-semibold text-blue-800">Sending Progress</h4>
+                <span className="text-sm text-blue-600">
                   {sendingProgress.progress?.sent || 0}/{sendingProgress.progress?.total || 0}
                 </span>
               </div>
               
-              <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-3 mb-4">
+              <div className="w-full bg-blue-200 rounded-full h-2 mb-4">
                 <div 
-                  className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                  className="bg-blue-600 h-2 rounded-full transition-all"
                   style={{ 
                     width: `${sendingProgress.progress?.total > 0 ? 
                       ((sendingProgress.progress.sent || 0) / sendingProgress.progress.total) * 100 : 0}%` 
@@ -1043,15 +902,15 @@ const resetAllStuckConnections = () => {
               <div className="grid grid-cols-3 gap-4 text-sm text-center">
                 <div>
                   <div className="text-lg font-bold text-green-600">{sendingProgress.progress?.sent || 0}</div>
-                  <div className="text-gray-600 dark:text-gray-400">Sent</div>
+                  <div className="text-gray-600">Sent</div>
                 </div>
                 <div>
                   <div className="text-lg font-bold text-red-600">{sendingProgress.progress?.failed || 0}</div>
-                  <div className="text-gray-600 dark:text-gray-400">Failed</div>
+                  <div className="text-gray-600">Failed</div>
                 </div>
                 <div>
                   <div className="text-lg font-bold text-gray-600">{sendingProgress.progress?.pending || 0}</div>
-                  <div className="text-gray-600 dark:text-gray-400">Pending</div>
+                  <div className="text-gray-600">Pending</div>
                 </div>
               </div>
             </motion.div>
@@ -1063,14 +922,13 @@ const resetAllStuckConnections = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-6"
       >
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Campaigns</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Recent Campaigns</h3>
           <button 
             onClick={() => queryClient.invalidateQueries({ queryKey: ['campaigns'] })}
-            className="flex items-center space-x-2 px-3 py-2 text-gray-600 bg-gray-50 dark:bg-gray-700 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+            className="flex items-center space-x-2 px-3 py-2 text-gray-600 bg-gray-50 rounded-lg hover:bg-gray-100"
           >
             <RefreshCw size={14} />
             <span>Refresh</span>
@@ -1079,66 +937,63 @@ const resetAllStuckConnections = () => {
         
         {campaignsLoading ? (
           <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
-            <p className="text-gray-500 mt-2">Loading campaigns...</p>
+            <RefreshCw className="animate-spin mx-auto mb-2" size={32} />
+            <p className="text-gray-500">Loading campaigns...</p>
           </div>
         ) : campaigns?.data?.length === 0 ? (
           <div className="text-center py-8">
-            <BarChart3 className="text-gray-400 mx-auto mb-4" size={48} />
-            <p className="text-gray-600 dark:text-gray-400">No campaigns yet. Send your first message to get started!</p>
+            <MessageSquare className="text-gray-400 mx-auto mb-4" size={48} />
+            <p className="text-gray-600">No campaigns yet. Send your first message to get started!</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Campaign</th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Type</th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Recipients</th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Status</th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Progress</th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-600 dark:text-gray-400">Created</th>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-3 px-4 font-medium text-gray-600">Campaign</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600">Type</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600">Recipients</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600">Progress</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600">Created</th>
                 </tr>
               </thead>
               <tbody>
                 {campaigns?.data?.map((campaign) => (
-                  <tr key={campaign._id} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                    <td className="py-4 px-4">
-                      <div className="font-medium text-gray-900 dark:text-white">{campaign.name}</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400 truncate max-w-xs">
+                  <tr key={campaign._id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-3 px-4">
+                      <div className="font-medium">{campaign.name}</div>
+                      <div className="text-sm text-gray-600 truncate max-w-xs">
                         {campaign.messageContent?.content?.substring(0, 50)}
                         {campaign.messageContent?.content?.length > 50 ? '...' : ''}
                       </div>
                     </td>
-                    <td className="py-4 px-4">
+                    <td className="py-3 px-4">
                       <div className="flex items-center space-x-1">
-                        {campaign.messageContent?.type === 'text' && <MessageSquare className="text-gray-500" size={16} />}
-                        {campaign.messageContent?.type === 'image' && <Image className="text-blue-500" size={16} />}
-                        {campaign.messageContent?.type === 'video' && <Video className="text-purple-500" size={16} />}
-                        <span className="text-sm capitalize text-gray-600 dark:text-gray-400">
+                        {campaign.messageContent?.type === 'text' && <MessageSquare size={16} />}
+                        {campaign.messageContent?.type === 'image' && <Image size={16} />}
+                        {campaign.messageContent?.type === 'video' && <Video size={16} />}
+                        <span className="text-sm capitalize">
                           {campaign.messageContent?.type || 'text'}
                         </span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-gray-600 dark:text-gray-400">
-                      {campaign.progress?.total || 0}
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className={`px-3 py-1 text-xs font-medium rounded-full ${
-                        campaign.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                        campaign.status === 'running' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' :
-                        campaign.status === 'paused' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
-                        campaign.status === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
-                        'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'
+                    <td className="py-3 px-4">{campaign.progress?.total || 0}</td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        campaign.status === 'completed' ? 'bg-green-100 text-green-800' :
+                        campaign.status === 'running' ? 'bg-blue-100 text-blue-800' :
+                        campaign.status === 'failed' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
                       }`}>
                         {campaign.status}
                       </span>
                     </td>
-                    <td className="py-4 px-4">
+                    <td className="py-3 px-4">
                       <div className="flex items-center space-x-2">
-                        <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div className="flex-1 bg-gray-200 rounded-full h-2">
                           <div 
-                            className={`h-2 rounded-full transition-all ${
+                            className={`h-2 rounded-full ${
                               campaign.status === 'completed' ? 'bg-green-500' :
                               campaign.status === 'running' ? 'bg-blue-500' :
                               campaign.status === 'failed' ? 'bg-red-500' :
@@ -1150,13 +1005,13 @@ const resetAllStuckConnections = () => {
                             }}
                           />
                         </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 w-12">
+                        <span className="text-xs text-gray-500 w-12">
                           {campaign.progress?.total > 0 ? 
                             Math.round(((campaign.progress.sent + campaign.progress.failed) / campaign.progress.total) * 100) : 0}%
                         </span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-gray-600 dark:text-gray-400">
+                    <td className="py-3 px-4 text-gray-600">
                       <div className="text-sm">
                         {new Date(campaign.createdAt).toLocaleDateString()}
                       </div>
@@ -1174,64 +1029,120 @@ const resetAllStuckConnections = () => {
 
       {/* QR Code Modal */}
       <AnimatePresence>
-        {showQRCode && qrCodeData && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 max-w-md w-full"
-            >
-              <div className="text-center">
-                <QrCode className="text-green-600 mx-auto mb-4" size={48} />
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Scan QR Code</h3>
-                <p className="text-gray-600 dark:text-gray-400 mb-6">
-                  Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device, and scan this QR code.
-                </p>
-                
-                {/* QR Code Display */}
-                <div className="w-64 h-64 bg-gray-100 dark:bg-gray-700 rounded-xl flex items-center justify-center mx-auto mb-6">
-                  {qrCodeData ? (
-                    <img 
-                      src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`}
-                      alt="WhatsApp QR Code"
-                      className="w-full h-full object-contain rounded-xl"
-                    />
-                  ) : (
-                    <div className="text-center">
-                      <RefreshCw className="text-gray-400 animate-spin mx-auto mb-2" size={32} />
-                      <p className="text-gray-500">Generating QR code...</p>
-                    </div>
-                  )}
-                </div>                
-                
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 mb-6">
-                  <div className="flex items-center space-x-2 text-blue-800 dark:text-blue-400">
-                    <AlertTriangle size={16} />
-                    <p className="text-sm">
-                      QR code expires in 20 seconds. If it expires, please try connecting again.
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="flex space-x-3">
-                  <button
-                    onClick={closeQRModal}
-                    className="flex-1 px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={closeQRModal}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
-                  >
-                    Done
-                  </button>
-                </div>
+        {showQRCode && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto"
+    >
+      <div className="text-center">
+        <QrCode className="text-green-600 mx-auto mb-4" size={48} />
+        <h3 className="text-xl font-bold mb-4">Scan QR Code</h3>
+        <p className="text-gray-600 mb-6">
+          Open WhatsApp → Settings → Linked Devices → Link a Device → Scan this code
+        </p>
+        
+        <div className="w-80 h-80 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center mx-auto mb-6">
+          {qrCodeData ? (
+            <div className="relative w-full h-full">
+              <img 
+                src={qrCodeData}
+                alt="WhatsApp QR Code"
+                className="w-full h-full object-contain rounded-lg"
+                onLoad={() => {
+                  console.log('✅ QR image loaded successfully');
+                }}
+                onError={(e) => {
+                  console.error('❌ QR image failed to load');
+                  console.error('❌ Image src length:', e.target.src?.length);
+                  console.error('❌ Image src preview:', e.target.src?.substring(0, 100));
+                  addNotification('error', 'QR code image failed to load');
+                }}
+              />
+              <div className="absolute bottom-2 right-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                {new Date().toLocaleTimeString()}
               </div>
-            </motion.div>
-          </div>
-        )}
+            </div>
+          ) : (
+            <div className="text-center">
+              <RefreshCw className="text-gray-400 animate-spin mx-auto mb-2" size={32} />
+              <p className="text-gray-500 mb-2">Generating QR Code...</p>
+              <p className="text-xs text-gray-400">This may take up to 30 seconds</p>
+            </div>
+          )}
+        </div>
+        
+        <div className="text-xs text-gray-500 mb-4">
+          QR Code will refresh automatically every 60 seconds
+        </div>
+        
+        <div className="flex space-x-3">
+          <button
+            onClick={async () => {
+              console.log('🔄 Manual QR refresh requested');
+              
+              try {
+                // Try to get fresh QR from backend
+                const accounts = await queryClient.getQueryData(['whatsapp-accounts']);
+                const targetAccount = accounts?.data?.find(acc => 
+                  acc.status === 'connecting' || acc.status === 'qr_ready'
+                );
+                
+                if (targetAccount) {
+                  const response = await fetch(`${API_BASE}/api/whatsapp-web/qr/${targetAccount._id}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                  });
+                  
+                  if (response.ok) {
+                    const result = await response.json();
+                    if (result.success && result.data?.qrCode) {
+                      console.log('✅ Fresh QR received from backend');
+                      setQrCodeData(result.data.qrCode);
+                      addNotification('success', 'QR code refreshed');
+                    } else {
+                      addNotification('error', 'No QR code available');
+                    }
+                  } else {
+                    addNotification('error', 'Failed to get fresh QR code');
+                  }
+                } else {
+                  addNotification('error', 'No active connection found');
+                }
+                
+              } catch (error) {
+                console.error('❌ QR refresh failed:', error);
+                addNotification('error', 'QR refresh failed');
+              }
+            }}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            disabled={!socket?.connected}
+          >
+            {socket?.connected ? 'Refresh QR' : 'Connecting...'}
+          </button>
+          <button
+            onClick={() => {
+              console.log('❌ QR modal closed by user');
+              setShowQRCode(false);
+              setQrCodeData('');
+            }}
+            className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+          >
+            Close
+          </button>
+        </div>
+        
+        {/* Debug info (remove in production) */}
+        <div className="mt-4 text-xs text-gray-400 border-t pt-4">
+          <div>Socket: {socket?.connected ? '✅ Connected' : '❌ Disconnected'}</div>
+          <div>QR Data: {qrCodeData ? '✅ Present' : '❌ Missing'}</div>
+          <div>QR Size: {qrCodeData ? `${qrCodeData.length} chars` : 'N/A'}</div>
+        </div>
+      </div>
+    </motion.div>
+  </div>
+)}
       </AnimatePresence>
     </div>
   );

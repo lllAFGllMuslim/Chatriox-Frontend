@@ -7,12 +7,14 @@ import {
   MessageSquare, 
   Search, 
   Shield, 
+  LayoutTemplate, 
   Users, 
   Settings, 
   CreditCard,
   Activity,
   UserCog,
-  X
+  X,
+  Building
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -31,7 +33,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { name: 'Lead Scraper', href: '/mail-scraper', icon: Search },
     { name: 'Email Validation', href: '/email-validation', icon: Shield },
     { name: 'Email Tracking', href: '/email-tracking', icon: Activity },
-    { name: 'Accounts', href: '/accounts', icon: Users },
+    { name: 'Template Builder', href: '/template-manager', icon: LayoutTemplate },
     { name: 'Plans', href: '/plans', icon: CreditCard },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];
